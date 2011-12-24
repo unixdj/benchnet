@@ -1,0 +1,8 @@
+*.[568ao]
+[568a].out
+_testmain.go
+_obj
+_test
+.*.swp
+node/node
+bench.db
