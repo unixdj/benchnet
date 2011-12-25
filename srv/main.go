@@ -1,8 +1,7 @@
 package main
 
 import (
-	"../lib/conn"
-	"../node/sched" // XXX
+	"benchnet/lib/conn"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/gob"
@@ -28,15 +27,14 @@ type jobDesc struct {
 	Id            int
 	Period, Start int
 	Check         []string
-	s             *sched.Sched
 }
 
 type jobList []jobDesc
 
 var jobs = jobList{
-	{0, 3, 3, []string{"dns", "not.found"}, nil},
-	{1, 7, 3, []string{"dns", "foo.bar"}, nil},
-	{3, 20, 10, []string{"http", "get", "http://foo.bar/"}, nil},
+	{0, 3, 3, []string{"dns", "not.found"}},
+	{1, 7, 3, []string{"dns", "foo.bar"}},
+	{3, 20, 10, []string{"http", "get", "http://foo.bar/"}},
 }
 
 const clientLastTime = 1324105000000000000 // or so

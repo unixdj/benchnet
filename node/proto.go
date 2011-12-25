@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../lib/conn"
+	"benchnet/lib/conn"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"./check"
-	"./sched"
+	"benchnet/node/check"
+	"benchnet/node/sched"
 	"fmt"
 	"sort"
 	"time"

@@ -82,6 +82,7 @@ package conf
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -90,102 +91,112 @@ import (
 	"unicode"
 )
 
-// Type of value for Var.Typ (default is String)
-const (
-	String   = iota // string
-	Signed          // int64
-	Unsigned        // uint64
-)
+// Value is the interface to the value pointed to by Var.
+type Value interface {
+	Set(string) error
+}
+
+// Uint64Value represents a configuration variable's uint64 value.
+// Numeric values can be given as decimal, octal or hexadecimal,
+// in the usual C/Go manner (255 == 0377 == 0xff).
+type Uint64Value uint64
+
+func (v *Uint64Value) Set(s string) error {
+	u, err := strconv.ParseUint(s, 0, 64)
+	if err != nil {
+		// strip fluff from strconf.ParseUint
+		return err.(*strconv.NumError).Err
+	}
+	*v = Uint64Value(u)
+	return nil
+}
+
+// StringValue represents a configuration variable's string value.
+type StringValue string
+
+func (v *StringValue) Set(s string) error {
+	*v = StringValue(s)
+	return nil
+}
 
 // Var describes a configuration variable and has pointers to corresponding
 // (Go) variables.  Slice of Var is used for calling Parse().
 type Var struct {
-	Name     string         // name of configuration variable
-	Typ      int            // type: string or integer
-	Max      uint64         // maximum num value or 0; signed: min = -max-1
-	RE       *regexp.Regexp // regexp to match value or nil
-	Required bool           // variable is required to be set in conf file
-	Sval     *string        // unquoted string value, always set if present
-	Snval    *int64         // signed numeric value, for Typ Signed
-	Unval    *uint64        // unsigned numeric value, for Typ Unsigned
-	set      bool           // has been set
+	Name     string // name of configuration variable
+	Val      Value  // Value to set
+	Required bool   // variable is required to be set in conf file
+	set      bool   // has been set
 }
 
 type parser struct {
-	r    *bufio.Reader
-	file string
-	line int
-	vars []Var
-}
-
-type ParseError struct {
-	file string
-	line int
-	err  string
+	r     *bufio.Reader
+	file  string
+	line  int
+	ident string
+	value string
+	vars  []Var
 }
 
 const (
-	outOfRange  = "%s: value out of range"
+	outOfRange  = "value out of range"
 	syntaxError = "syntax error"
 )
 
+// ParseError represents the error.
+type ParseError struct {
+	File  string // filename or "stdin"
+	Line  int    // line number or 0
+	Ident string // identifier or ""
+	Value string // value as appears in input, possibly quoted; or ""
+	Err   error  // error
+}
+
+// Error prints ParseError as follows:
+//     File:[Line:][ Ident:] Err
+// Value never gets printed.
+func (p *ParseError) Error() string {
+	var line, ident string
+	if p.Line != 0 {
+		line = fmt.Sprintf("%d:", p.Line)
+	}
+	if p.Ident != "" {
+		ident = fmt.Sprintf(" %s:", p.Ident)
+	}
+	return fmt.Sprintf("%s:%s%s %s\n", p.File, line, ident, p.Err)
+}
+
+// newError creates ParseError from s
+func (p *parser) newError(s string) *ParseError {
+	return &ParseError{p.file, p.line, p.ident, p.value, errors.New(s)}
+}
+
+// Regexps for tokens
 var (
 	identRE  = regexp.MustCompile(`^[-_a-zA-Z][-_a-zA-Z0-9]*`)
 	plainRE  = regexp.MustCompile(`^[^\pZ\pC"#'=\\]+`)
 	quotedRE = regexp.MustCompile(`^"(?:[^\pC"\\]|\\[^\pC])*"`)
 )
 
-func (p *ParseError) Error() string {
-	if p.line == 0 {
-		return fmt.Sprintf("%s: %s\n", p.file, p.err)
-	}
-	return fmt.Sprintf("%s:%d: %s\n", p.file, p.line, p.err)
-}
-
-func (p *parser) newError(s string, a ...interface{}) *ParseError {
-	return &ParseError{p.file, p.line, fmt.Sprintf(s, a...)}
-}
-
 func eatSpace(s string) string {
 	return strings.TrimLeftFunc(s, unicode.IsSpace)
 }
 
-func (p *parser) setValue(v *Var, value string) error {
-	if v.set {
-		return p.newError("%s appears more than once", v.Name)
-	}
-	v.set = true
-	if v.Sval != nil {
-		*v.Sval = value
-	}
-	var err error
-	switch v.Typ {
-	case String:
-		*v.Sval = value // force panic if nil
-		if v.RE != nil && !v.RE.MatchString(value) {
-			return p.newError("%s: invalid syntax", v.Name)
+func (p *parser) setValue(value string) error {
+	for i := range p.vars {
+		v := &p.vars[i]
+		if p.ident == v.Name {
+			if v.set {
+				return p.newError("already defined")
+			}
+			v.set = true
+			if err := v.Val.Set(value); err != nil {
+				return &ParseError{p.file, p.line, p.ident,
+					p.value, err}
+			}
+			return nil
 		}
-	case Signed:
-		*v.Snval, err = strconv.ParseInt(value, 0, 64)
-		if v.Max != 0 && (*v.Snval > int64(v.Max) || *v.Snval < -int64(v.Max)-1) {
-			return p.newError(outOfRange, v.Name)
-		}
-	case Unsigned:
-		*v.Unval, err = strconv.ParseUint(value, 0, 64)
-		if v.Max != 0 && *v.Unval > v.Max {
-			return p.newError(outOfRange, v.Name)
-		}
-	default:
-		panic("printer on fire")
 	}
-	if err != nil {
-		// strip fluff from strconf.Parse{I,Ui}nt
-		if ne, ok := err.(*strconv.NumError); ok {
-			return p.newError("%s: %s", v.Name, ne.Err)
-		}
-		panic("NOTREACHED")
-	}
-	return nil
+	return p.newError("unknown variable")
 }
 
 func (p *parser) parseLine(line string) error {
@@ -193,33 +204,27 @@ func (p *parser) parseLine(line string) error {
 	if line == "" || line[0] == '#' {
 		return nil
 	}
-	ident := identRE.FindString(line)
-	line = eatSpace(line[len(ident):])
-	if ident == "" || line == "" || line[0] != '=' {
+	p.ident = identRE.FindString(line)
+	line = eatSpace(line[len(p.ident):])
+	if p.ident == "" || line == "" || line[0] != '=' {
 		return p.newError(syntaxError)
 	}
 	line = eatSpace(line[1:])
-	value := plainRE.FindString(line)
-	vlen := len(value)
-	if value == "" {
-		value = quotedRE.FindString(line)
-		vlen = len(value)
+	p.value = plainRE.FindString(line)
+	unquoted := p.value
+	if p.value == "" {
+		p.value = quotedRE.FindString(line)
 		var err error
-		value, err = strconv.Unquote(value)
+		unquoted, err = strconv.Unquote(p.value)
 		if err != nil {
 			return p.newError(syntaxError)
 		}
 	}
-	line = eatSpace(line[vlen:])
+	line = eatSpace(line[len(p.value):])
 	if len(line) != 0 && line[0] != '#' {
 		return p.newError(syntaxError)
 	}
-	for i, v := range p.vars {
-		if ident == v.Name {
-			return p.setValue(&p.vars[i], value)
-		}
-	}
-	return p.newError("%s: unknown variable", ident)
+	return p.setValue(unquoted)
 }
 
 // Parse parses the configuration file from r according the description
@@ -233,18 +238,10 @@ func (p *parser) parseLine(line string) error {
 // Required == true are errors.
 //
 // When parsing, the value gets unquoted if needed and the Var
-// corresponding to the identifier is found.  If Sval is not nil, the
-// string it points to is set to the unquoted string value.  If the
-// Var's Typ is String, Sval can't be nil.
-//
-// If Typ is String and RE is not nil, RE is matched against the
-// string.  You normally want to enclose your regexp in ^$.
-//
-// The values at Snval and Unval are set if Typ is Signed or Unsigned,
-// respectively.  If Max is not 0, the value is checked against it.  If
-// Signed, it's also checked against min == -Max-1.  Numeric values can
-// be given as decimal, octal or hexadecimal, in the usual C/Go manner
-// (255 == 0377 == 0xff).
+// corresponding to the identifier is found.  Then the Set() method
+// is called to set the Var.  If you need syntax validation, you
+// should create your own Value type and return an error from Set()
+// on invalid input.
 //
 // The parsing sequence implies that even when a number is desired,
 // the quoted string "\x32\u0033" is the same as unquoted 23.
@@ -260,6 +257,7 @@ func Parse(r io.Reader, filename string, vars []Var) error {
 	}
 	for {
 		p.line++
+		p.ident, p.value = "", ""
 		buf, ispref, err := p.r.ReadLine()
 		if err == io.EOF {
 			break
@@ -274,8 +272,9 @@ func Parse(r io.Reader, filename string, vars []Var) error {
 	}
 	for _, v := range p.vars {
 		if v.Required && !v.set {
-			p.line = 0 // for ParseError.Error()
-			return p.newError("%s required but not set", v.Name)
+			p.ident = v.Name
+			p.line, p.value = 0, ""
+			return p.newError("required but not set")
 		}
 	}
 	return nil

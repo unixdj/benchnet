@@ -1,4 +1,4 @@
-// Package conn (The Bench Connection) proides helper functions
+// Package conn (The Bench Connection) provides helper functions
 // for the Bench Gossip Protocol, mostly dealing with buffering,
 // authentication and signing.
 //
@@ -193,6 +193,7 @@ func Dial(af, addr string, key []byte) (*Conn, error) {
 	}
 	c, err := New(nc)
 	if err != nil {
+		nc.Close()
 		return nil, err
 	}
 	c.h = hmac.NewSHA256(key)

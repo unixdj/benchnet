@@ -1,9 +1,10 @@
+// main
 package main
 
 import (
-	"../lib/conf"
-	"./check"
-	"./db"
+	"benchnet/lib/conf"
+	"benchnet/node/check"
+	"benchnet/node/db"
 	"bufio"
 	"errors"
 	"fmt"
@@ -217,41 +218,49 @@ func loadResults(from, till uint64) ([]*check.Result, error) {
 	return ra, nil
 }
 
+var connKeyRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+type connKeyValue []byte
+
+func (key *connKeyValue) Set(s string) error {
+	if !connKeyRE.MatchString(s) {
+		return errors.New("invalid key (must be 64 hexadecimal digits)")
+	}
+	fmt.Sscanf(s, "%x", key) // will succeed
+	return nil
+}
+
 func readConf() error {
 	f, err := os.Open(conffile)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	var key string
 	err = conf.Parse(f, conffile, []conf.Var{
 		{
 			Name: "db",
-			Sval: &dbfile,
+			Val:  (*conf.StringValue)(&dbfile),
 		},
 		{
 			Name:     "clientid",
-			Typ:      conf.Unsigned,
+			Val:      (*conf.Uint64Value)(&clientId),
 			Required: true,
-			Unval:    &clientId,
 		},
 		{
 			Name:     "nodeid",
-			Typ:      conf.Unsigned,
+			Val:      (*conf.Uint64Value)(&nodeId),
 			Required: true,
-			Unval:    &nodeId,
 		},
 		{
 			Name:     "key",
-			RE:       regexp.MustCompile(`^[0-9a-fA-F]{64}$`),
+			Val:      (*connKeyValue)(&networkKey),
 			Required: true,
-			Sval:     &key,
 		},
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Sscanf(key, "%x", &networkKey) // will succeed
+	fmt.Printf("%x", networkKey) // will succeed
 	return nil
 }
 
