@@ -92,9 +92,21 @@ import (
 )
 
 // Value is the interface to the value pointed to by Var.
+// Built-in Values also implement String() for compatibility with flag.Value.
 type Value interface {
 	Set(string) error
+	//String() string
 }
+
+// StringValue represents a configuration variable's string value.
+type StringValue string
+
+func (v *StringValue) Set(s string) error {
+	*v = StringValue(s)
+	return nil
+}
+
+func (v *StringValue) String() string { return string(*v) }
 
 // Uint64Value represents a configuration variable's uint64 value.
 // Numeric values can be given as decimal, octal or hexadecimal,
@@ -111,13 +123,7 @@ func (v *Uint64Value) Set(s string) error {
 	return nil
 }
 
-// StringValue represents a configuration variable's string value.
-type StringValue string
-
-func (v *StringValue) Set(s string) error {
-	*v = StringValue(s)
-	return nil
-}
+func (v *Uint64Value) String() string { return fmt.Sprintf("%d", *v) }
 
 // Var describes a configuration variable and has pointers to corresponding
 // (Go) variables.  Slice of Var is used for calling Parse().

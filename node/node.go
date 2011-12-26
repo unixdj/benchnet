@@ -12,25 +12,26 @@ import (
 	"strings"
 )
 
-const conffile = "bench.conf"
-
 var (
+	conffile         = "bench.conf"
 	dbfile           = "bench.db"
 	clientId, nodeId uint64
 	networkKey       []byte
+	netKeyRE         = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
 
-var connKeyRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
-type connKeyValue []byte
+type netKeyValue []byte
 
-func (key *connKeyValue) Set(s string) error {
-	if !connKeyRE.MatchString(s) {
+func (key *netKeyValue) Set(s string) error {
+	if !netKeyRE.MatchString(s) {
 		return errors.New("invalid key (must be 64 hexadecimal digits)")
 	}
 	fmt.Sscanf(s, "%x", key) // will succeed
 	return nil
 }
+
+//func (key *netKeyValue) String() string { return fmt.Sprintf("%x", *key) }
 
 func readConf() error {
 	f, err := os.Open(conffile)
@@ -38,7 +39,7 @@ func readConf() error {
 		return err
 	}
 	defer f.Close()
-	err = conf.Parse(f, conffile, []conf.Var{
+	return conf.Parse(f, conffile, []conf.Var{
 		{
 			Name: "db",
 			Val:  (*conf.StringValue)(&dbfile),
@@ -55,14 +56,10 @@ func readConf() error {
 		},
 		{
 			Name:     "key",
-			Val:      (*connKeyValue)(&networkKey),
+			Val:      (*netKeyValue)(&networkKey),
 			Required: true,
 		},
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // crude parser for now
