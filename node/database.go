@@ -1,8 +1,8 @@
 package main
 
 import (
+	"benchnet/lib/stdb"
 	"benchnet/node/check"
-	"benchnet/node/db"
 	"errors"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-var dbc *db.DB
+var dbc *stdb.DB
 
 // database stuff
 
@@ -41,7 +41,7 @@ const (
 
 func dbOpen() error {
 	var err error
-	dbc, err = db.Open("sqlite3", dbfile)
+	dbc, err = stdb.Open("sqlite3", dbfile)
 	if err != nil {
 		return err
 	}
