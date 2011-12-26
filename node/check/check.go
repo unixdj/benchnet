@@ -88,6 +88,7 @@ func checkHttp(v int, s []string, dryrun bool) *Result {
 	if err != nil {
 		return errResult(err)
 	}
+	defer resp.Body.Close()
 	a, err := httputil.DumpRequest(resp.Request, false)
 	if err != nil {
 		return errResult(err)
