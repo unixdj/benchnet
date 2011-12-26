@@ -62,7 +62,6 @@ func readConf() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%x", networkKey) // will succeed
 	return nil
 }
 
