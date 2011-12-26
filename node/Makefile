@@ -1,7 +1,8 @@
 include $(GOROOT)/src/Make.inc
 
 TARG=node
-GOFILES=jobs.go node.go proto.go
+GOFILES=database.go jobs.go node.go proto.go
+#GCFLAGS=-I ${GOPATH}/pkg/linux_amd64
 DIRS=../lib/conf ../lib/conn check db sched
 
 PREREQ=$(addsuffix .install, $(DIRS))

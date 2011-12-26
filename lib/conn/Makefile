@@ -1,7 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=conn
-TARGDIR=..
+TARG=benchnet/lib/conn
 GOFILES=conn.go
 
 include $(GOROOT)/src/Make.pkg

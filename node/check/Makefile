@@ -1,7 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=check
+TARG=benchnet/node/check
 GOFILES=check.go ../../lib/check/result.go
-#TARGDIR=..
 
 include $(GOROOT)/src/Make.pkg

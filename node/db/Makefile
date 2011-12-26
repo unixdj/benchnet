@@ -1,7 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=db
-TARGDIR=..
+TARG=benchnet/node/db
 GOFILES=db.go
 
 include $(GOROOT)/src/Make.pkg
