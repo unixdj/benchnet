@@ -1,0 +1,1 @@
+../../lib/check/result.go

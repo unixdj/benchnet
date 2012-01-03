@@ -39,6 +39,7 @@ const (
 // Node data.  The client knows it, the server has mapping from Id to key.
 type Node struct {
 	ClientId, NodeId uint64
+	LastSeen         uint64
 	Key              []byte
 }
 
@@ -53,6 +54,7 @@ type Conn struct {
 	r        *bufio.Reader
 	w        *bufio.Writer
 	h        hash.Hash
+	node     *Node  // client
 	chalThem []byte // challenge we send them
 	chalUs   []byte // they challenge us
 }

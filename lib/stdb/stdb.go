@@ -6,7 +6,8 @@
 // (*Rows).Next() returns false or (*Rows).Close() is called.
 // So do it fast and close it good.
 //
-// Same goes for Begin(), which should be finished off with
+// Same goes for QueryRow() after which onw (*Row).Scan() should
+// be issued, and Begin(), which should be finished off with
 // (*Tx).Commit() or (*Tx).Rollback().
 package stdb
 
@@ -21,9 +22,9 @@ const (
 	opClose = iota
 	opExec
 	opQuery
+	opQueryRow
 	opScan
 	opNext
-	opRowClose
 	opBegin
 	opCommit
 	opRollback
@@ -40,6 +41,12 @@ type Rows struct {
 	closed bool
 }
 
+type Row struct {
+	row    *sql.Row
+	c      chan req // request channel for query
+	closed bool
+}
+
 type Tx struct {
 	tx     *sql.Tx
 	c      chan req
@@ -50,15 +57,16 @@ type Tx struct {
 type res struct {
 	result sql.Result // for Exec()
 	qctx   *Rows      // query context
-	tx     *Tx
+	qrctx  *Row       // query row context
+	tx     *Tx        // transaction
 	err    error
 }
 
 // request
 type req struct {
-	op   int           // const above
+	op   int           // const above (opSomethingOrOther)
 	cmd  string        // SQL command
-	args []interface{} // arguments for Exec(), Query(), Scan()
+	args []interface{} // arguments for Exec(), Scan(), Query() etc.
 	c    chan res      // channel for response
 }
 
@@ -88,7 +96,7 @@ func (db *DB) handleQuery(r *req) {
 				qr.c <- res{err: io.EOF}
 				return
 			}
-		case opRowClose:
+		case opClose:
 			qctx.closed = true
 			qr.c <- res{}
 			return
@@ -97,6 +105,20 @@ func (db *DB) handleQuery(r *req) {
 			qr.c <- res{err: errors.New("invalid db.Rows operation")}
 			return
 		}
+	}
+}
+
+// queryRow loop: set up sql.Row and process one Scan()
+func (db *DB) handleQueryRow(r *req) {
+	row := db.dbc.QueryRow(r.cmd, r.args...)
+	qrctx := &Row{row: row, c: make(chan req)}
+	r.c <- res{qrctx: qrctx}
+	qr := <-qrctx.c
+	qrctx.closed = true
+	if qr.op == opScan {
+		qr.c <- res{err: qrctx.row.Scan(qr.args...)}
+	} else {
+		qr.c <- res{err: errors.New("invalid db.Row operation")}
 	}
 }
 
@@ -146,6 +168,8 @@ func (db *DB) thread() {
 			r.c <- res{result: result, err: err}
 		case opQuery:
 			db.handleQuery(&r)
+		case opQueryRow:
+			db.handleQueryRow(&r)
 		case opBegin:
 			db.handleTx(&r)
 		default:
@@ -180,6 +204,8 @@ func (db *DB) Exec(s string, args ...interface{}) (sql.Result, error) {
 	return r.result, r.err
 }
 
+// -- Query() / Rows
+
 func (db *DB) Query(s string, args ...interface{}) (*Rows, error) {
 	c := make(chan res)
 	db.c <- req{op: opQuery, cmd: s, args: args, c: c}
@@ -210,9 +236,28 @@ func (qctx *Rows) Close() bool {
 		return false
 	}
 	c := make(chan res)
-	qctx.c <- req{op: opRowClose, c: c}
+	qctx.c <- req{op: opClose, c: c}
 	return (<-c).err == nil
 }
+
+// -- QueryRow() / Row
+
+func (db *DB) QueryRow(s string, args ...interface{}) *Row {
+	c := make(chan res)
+	db.c <- req{op: opQueryRow, cmd: s, args: args, c: c}
+	return (<-c).qrctx
+}
+
+func (qrctx *Row) Scan(args ...interface{}) error {
+	if qrctx.closed {
+		return io.EOF
+	}
+	c := make(chan res)
+	qrctx.c <- req{op: opScan, args: args, c: c}
+	return (<-c).err
+}
+
+// -- Begin() / Tx
 
 func (db *DB) Begin() (*Tx, error) {
 	c := make(chan res)

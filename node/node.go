@@ -2,7 +2,7 @@
 package main
 
 import (
-	"benchnet/lib/conf"
+	"github.com/unixdj/conf"
 	"bufio"
 	"errors"
 	"fmt"
@@ -20,7 +20,6 @@ var (
 	netKeyRE         = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 )
 
-
 type netKeyValue []byte
 
 func (key *netKeyValue) Set(s string) error {
@@ -31,7 +30,7 @@ func (key *netKeyValue) Set(s string) error {
 	return nil
 }
 
-//func (key *netKeyValue) String() string { return fmt.Sprintf("%x", *key) }
+//xunc (key *netKeyValue) String() string { return fmt.Sprintf("%x", *key) }
 
 func readConf() error {
 	f, err := os.Open(conffile)

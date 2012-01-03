@@ -1,27 +1,14 @@
 package main
 
 import (
+	"benchnet/lib/check"
 	"benchnet/lib/conn"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/gob"
 	"io"
 	"log"
 	"net"
 )
-
-const (
-	keySize = sha256.Size
-)
-
-type Result struct {
-	JobId int
-	Flags int
-	Errs  string
-	Start int64
-	RT    int64
-	S     []string
-}
 
 type jobDesc struct {
 	Id            int
@@ -39,6 +26,7 @@ var jobs = jobList{
 
 const clientLastTime = 1324105000000000000 // or so
 var (
+	dbfile    = "srv.db"
 	clientKey = []byte("" +
 		"\x00\x01\x02\x03\x04\x05\x06\x07" +
 		"\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f" +
@@ -46,11 +34,55 @@ var (
 		"\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
 )
 
-func decodeUint64(buf []byte) uint64 {
-	return uint64(buf[0])<<56 | uint64(buf[1])<<48 |
-		uint64(buf[2])<<40 | uint64(buf[3])<<32 |
-		uint64(buf[4])<<24 | uint64(buf[5])<<16 |
-		uint64(buf[6])<<8 | uint64(buf[7])
+type step func(*conn.Conn, *conn.Node) (step, error)
+
+func sendGreet(s *conn.Conn, node *conn.Node) (step, error) {
+	greets := make([]byte, len(conn.Greet))
+	copy(greets, conn.Greet)
+	return authClient, s.SendChallenge(greets)
+}
+
+func authClient(s *conn.Conn, node *conn.Node) (step, error) {
+	buf := make([]byte, 16)
+	_, err := io.ReadFull(s, buf)
+	if err != nil {
+		return nil, err
+	}
+	clientId := binary.BigEndian.Uint64(buf)
+	nodeId := binary.BigEndian.Uint64(buf[8:])
+	if clientId != nodeId {
+		panic("test")
+	}
+	log.Printf("node id %d\n", nodeId)
+	node, err = selectNode(nodeId)
+	log.Printf("node key %x\n", node.Key)
+	if err != nil {
+		return nil, err
+	}
+	s.SetKey(node.Key)
+	s.WriteToHash(buf)
+	if err = s.CheckSig(); err != nil {
+		return nil, err
+	}
+	log.Printf("sig ok\n")
+	return recvLogs, s.ReceiveChallenge()
+}
+
+func recvLogs(s *conn.Conn, node *conn.Node) (step, error) {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], node.LastSeen)
+	if _, err := s.Write(buf[:]); err != nil {
+		return nil, err
+	}
+	if err := s.SendSig(); err != nil {
+		return nil, err
+	}
+	var results []check.Result
+	if err := gob.NewDecoder(s).Decode(&results); err != nil {
+		return nil, err
+	}
+	log.Printf("%v\n", results)
+	return nil, nil
 }
 
 func handle(c net.Conn) {
@@ -62,58 +94,25 @@ func handle(c net.Conn) {
 	}
 	defer s.Close()
 	log.Printf("handle\n")
-	greets := make([]byte, len(conn.Greet))
-	copy(greets, conn.Greet)
-	if err = s.SendChallenge(greets); err != nil {
-		log.Printf("handle: %v\n", err)
-		return
+	var node conn.Node
+	f, err := sendGreet(s, &node)
+	for f != nil && err == nil {
+		log.Printf("step\n")
+		f, err = f(s, &node)
 	}
-	buf := make([]byte, 16)
-	_, err = io.ReadFull(s, buf)
 	if err != nil {
 		log.Printf("handle: %v\n", err)
-		return
+	} else {
+		log.Printf("ok\n")
 	}
-	clientId := binary.BigEndian.Uint64(buf)
-	nodeId := binary.BigEndian.Uint64(buf[8:])
-	if clientId != nodeId {
-		panic("test")
-	}
-	s.SetKey(clientKey)
-	s.WriteToHash(buf)
-	err = s.CheckSig()
-	if err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	err = s.ReceiveChallenge()
-	if err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	buf = buf[:8]
-	binary.BigEndian.PutUint64(buf, clientLastTime)
-	if _, err = s.Write(buf); err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	if err = s.SendSig(); err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	enc := gob.NewEncoder(s)
-	if err = enc.Encode(&jobs); err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	if err = s.SendSig(); err != nil {
-		log.Printf("handle: %v\n", err)
-		return
-	}
-	log.Printf("ok\n")
 }
 
 func main() {
+	err := dbOpen()
+	if err != nil {
+		log.Printf("%v\n", err)
+		return
+	}
 	l, err := net.Listen("tcp", conn.Port)
 	if err != nil {
 		log.Printf("%v\n", err)
