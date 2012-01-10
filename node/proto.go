@@ -76,7 +76,7 @@ func recvJobs(s *conn.Conn) (step, error) {
 		return nil, err
 	}
 	fmt.Printf("newjobs: %v\n", newjobs)
-	mergeJobs(newjobs)
+	mergeJobs(newjobs) // XXX: before CheckSig()!!!
 	return nil, s.CheckSig()
 }
 

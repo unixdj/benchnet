@@ -18,11 +18,13 @@ type jobDesc struct {
 
 type jobList []jobDesc
 
+/*
 var jobs = jobList{
 	{0, 3, 3, []string{"dns", "not.found"}},
 	{1, 7, 3, []string{"dns", "foo.bar"}},
 	{3, 20, 10, []string{"http", "get", "http://foo.bar/"}},
 }
+*/
 
 const clientLastTime = 1324105000000000000 // or so
 var (
@@ -34,15 +36,15 @@ var (
 		"\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
 )
 
-type step func(*conn.Conn, *conn.Node) (step, error)
+type step func(*conn.Conn, *node) (step, error)
 
-func sendGreet(s *conn.Conn, node *conn.Node) (step, error) {
+func sendGreet(s *conn.Conn, n *node) (step, error) {
 	greets := make([]byte, len(conn.Greet))
 	copy(greets, conn.Greet)
 	return authClient, s.SendChallenge(greets)
 }
 
-func authClient(s *conn.Conn, node *conn.Node) (step, error) {
+func authClient(s *conn.Conn, n *node) (step, error) {
 	buf := make([]byte, 16)
 	_, err := io.ReadFull(s, buf)
 	if err != nil {
@@ -54,12 +56,12 @@ func authClient(s *conn.Conn, node *conn.Node) (step, error) {
 		panic("test")
 	}
 	log.Printf("node id %d\n", nodeId)
-	node, err = selectNode(nodeId)
-	log.Printf("node key %x\n", node.Key)
+	*n, err = selectNode(nodeId)
+	log.Printf("node key %x\n", n.key)
 	if err != nil {
 		return nil, err
 	}
-	s.SetKey(node.Key)
+	s.SetKey(n.key)
 	s.WriteToHash(buf)
 	if err = s.CheckSig(); err != nil {
 		return nil, err
@@ -68,9 +70,9 @@ func authClient(s *conn.Conn, node *conn.Node) (step, error) {
 	return recvLogs, s.ReceiveChallenge()
 }
 
-func recvLogs(s *conn.Conn, node *conn.Node) (step, error) {
+func recvLogs(s *conn.Conn, n *node) (step, error) {
 	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], node.LastSeen)
+	binary.BigEndian.PutUint64(buf[:], n.lastSeen)
 	if _, err := s.Write(buf[:]); err != nil {
 		return nil, err
 	}
@@ -94,11 +96,11 @@ func handle(c net.Conn) {
 	}
 	defer s.Close()
 	log.Printf("handle\n")
-	var node conn.Node
-	f, err := sendGreet(s, &node)
+	var n node
+	f, err := sendGreet(s, &n)
 	for f != nil && err == nil {
 		log.Printf("step\n")
-		f, err = f(s, &node)
+		f, err = f(s, &n)
 	}
 	if err != nil {
 		log.Printf("handle: %v\n", err)
@@ -110,6 +112,10 @@ func handle(c net.Conn) {
 func main() {
 	err := dbOpen()
 	if err != nil {
+		log.Printf("%v\n", err)
+		return
+	}
+	if err = loadDB(); err != nil {
 		log.Printf("%v\n", err)
 		return
 	}

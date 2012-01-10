@@ -2,10 +2,10 @@
 package main
 
 import (
-	"github.com/unixdj/conf"
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/unixdj/conf"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,7 +30,7 @@ func (key *netKeyValue) Set(s string) error {
 	return nil
 }
 
-//xunc (key *netKeyValue) String() string { return fmt.Sprintf("%x", *key) }
+//func (key *netKeyValue) String() string { return fmt.Sprintf("%x", *key) }
 
 func readConf() error {
 	f, err := os.Open(conffile)

@@ -130,6 +130,7 @@ func jobsEqual(a, b *jobDesc) bool {
 func mergeJobs(newjobs jobList) (status []bool, err error) {
 	sort.Sort(newjobs)
 	updated := false
+	status = make([]bool, len(newjobs))
 	i, j := 0, 0
 	for i < len(jobs) && j < len(newjobs) {
 		switch {

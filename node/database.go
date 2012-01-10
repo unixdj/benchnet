@@ -189,16 +189,13 @@ func loadResults(from, till uint64) ([]*check.Result, error) {
 		if r.S, err = parseStringArray(s); err != nil {
 			return nil, err
 		}
-		if oldl := len(ra); oldl == cap(ra) {
-			newl := oldl
-			if newl < 8192 {
-				newl <<= 1
+		if ralen := len(ra); ralen == cap(ra) {
+			if ralen < 1<<13 { // 8*1024
+				ralen <<= 1
 			} else {
-				newl += 8192
+				ralen += 1 << 13
 			}
-			newra := make([]*check.Result, oldl, newl)
-			copy(newra, ra)
-			ra = newra
+			ra = append(make([]*check.Result, 0, ralen), ra...)
 		}
 		ra = append(ra, r)
 	}

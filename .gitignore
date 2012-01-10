@@ -4,5 +4,4 @@ _testmain.go
 _obj
 _test
 .*.swp
-node/node
-bench.db
+*.db

@@ -54,7 +54,6 @@ type Conn struct {
 	r        *bufio.Reader
 	w        *bufio.Writer
 	h        hash.Hash
-	node     *Node  // client
 	chalThem []byte // challenge we send them
 	chalUs   []byte // they challenge us
 }
@@ -99,9 +98,7 @@ func (c *Conn) SendSig() error {
 	if c.h == nil {
 		return ErrProto
 	}
-	c.WriteToHash(c.chalUs)
-	buf := c.h.Sum(make([]byte, 0, KeySize))
-	c.h.Reset()
+	buf := c.Sign(make([]byte, 0, KeySize))
 	if _, err := c.w.Write(buf); err != nil {
 		return err
 	}
