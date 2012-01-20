@@ -2,7 +2,7 @@ include $(GOROOT)/src/Make.inc
 
 TARG=srv
 GOFILES=main.go
-DIRS=../lib/conn
+DIRS=../lib/conn ../lib/check
 
 PREREQ=$(addsuffix .install, $(DIRS))
 

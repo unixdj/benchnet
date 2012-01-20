@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"math/rand"
 	"sort"
 )
 
@@ -31,9 +32,12 @@ type job struct {
 	dirty bool     // relatively to db
 }
 
+type jlist []*job
+type nlist []*node
+
 var (
-	jobs     []job // list of jobs (sorted by geo?)
-	nodeHead *node // list of nodes
+	jobs  jlist // list of jobs (sorted by geo?)
+	nodes nlist // list of nodes
 )
 
 var errDataType = errors.New("wrong data type")
@@ -57,7 +61,8 @@ func (l jobList) index(id int) int {
 
 // in checks if j is in l.
 func (j *job) in(l jobList) bool {
-	return l[l.index(j.d.Id)].Id == j.d.Id
+	i := l.index(j.d.Id)
+	return i < len(l) && l[i].Id == j.d.Id
 }
 
 // runnable checks if job wants to run more times.
@@ -70,13 +75,17 @@ func (n *node) canRun(j *job) bool {
 	return !j.in(n.jobs) && j.capa <= n.capa-n.used
 }
 
-// addJob adds j to n's job list.
-func (n *node) addJob(j *job) {
+func crossLink(j *job, n *node) {
 	i := n.jobs.index(j.d.Id)
 	n.jobs = append(n.jobs[:i], append(jobList{j.d}, n.jobs[i:]...)...)
+	j.nodes = append(j.nodes, n.id)
+}
+
+// addJob adds j to n's job list.
+func (n *node) addJob(j *job) {
+	crossLink(j, n)
 	n.used += j.capa
 	n.dirty = true
-	j.nodes = append(j.nodes, n.id)
 	j.dirty = true
 }
 
@@ -89,37 +98,52 @@ func (n *node) addJobs(l []job) {
 	}
 }
 
+// perm permutes n pseudo-randomly.
+func perm(n []*node) {
+	t := make([]*node, len(n))
+	p := rand.Perm(len(n))
+	for i, v := range p {
+		t[i] = n[v] // pun not intended
+	}
+	copy(n, t)
+}
+
 func schedule() {
+	if len(nodes) == 0 || len(jobs) == 0 {
+		return
+	}
+	perm(nodes)
 	var (
-		lastmod *node      // last modified
-		n       = nodeHead // ...
-		cand    = jobs     // runnable jobs
+		lastmod = -1   // last modified
+		cand    = jobs // runnable jobs
 	)
-	// n == lastmod means we did the whole loop without scheduling any job.
+	// i == lastmod means we did the whole loop without scheduling any job.
 	// len(cand) == 0 means no jobs left to schedule.
-	for n != lastmod && len(cand) != 0 {
-		// add one job to n
-		for i := range cand {
-			if cand[i].runnable() && n.canRun(&cand[i]) {
-				n.addJob(&cand[i])
-				// shrink cand slice?
-				for !cand[0].runnable() {
-					cand = cand[1:]
+	for {
+		for i, n := range nodes {
+			if i == lastmod {
+				return
+			}
+			// add one job to n
+			for _, v := range cand {
+				if v.runnable() && n.canRun(v) {
+					n.addJob(v)
+					lastmod = i
+					for !cand[0].runnable() {
+						cand = cand[1:]
+						if len(cand) == 0 {
+							return
+						}
+					}
+					// TODO: move jobs to another list
+					// instead of the above?
+					break
 				}
-				// TODO: move job to another list instead of
-				// the above
-				lastmod = n
-				break
 			}
 		}
-		// advance n, looping
-		n = n.next
-		if n == nil {
-			// catch the case when no job is added after first loop
-			if lastmod == nil {
-				break
-			}
-			n = nodeHead
+		// catch the case when no job is added after first loop
+		if lastmod == -1 {
+			return
 		}
 	}
 }

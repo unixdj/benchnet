@@ -12,8 +12,8 @@
 package stdb
 
 import (
+	"database/sql"
 	"errors"
-	"exp/sql"
 	"io"
 )
 

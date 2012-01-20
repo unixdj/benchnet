@@ -172,13 +172,14 @@ func (c *Conn) ReceiveChallenge() error {
 
 // SetKey sets the hash key.
 func (c *Conn) SetKey(key []byte) {
-	c.h = hmac.NewSHA256(key)
+	c.h = hmac.New(sha256.New, key)
 }
 
 // New wraps net.Conn and returns *Conn.
 // You may want to call SetKey() later.
 func New(nc net.Conn) (*Conn, error) {
-	if err := nc.SetTimeout(60 * int64(time.Second)); err != nil {
+	// XXX: setting deadline to now + 1 min
+	if err := nc.SetDeadline(time.Now().Add(60 * time.Second)); err != nil {
 		return nil, err
 	}
 	return &Conn{c: nc, r: bufio.NewReader(nc), w: bufio.NewWriter(nc)}, nil
@@ -195,7 +196,7 @@ func Dial(af, addr string, key []byte) (*Conn, error) {
 		nc.Close()
 		return nil, err
 	}
-	c.h = hmac.NewSHA256(key)
+	c.h = hmac.New(sha256.New, key)
 	return c, nil
 }
 

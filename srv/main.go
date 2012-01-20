@@ -5,6 +5,7 @@ import (
 	"benchnet/lib/conn"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -109,6 +110,22 @@ func handle(c net.Conn) {
 	}
 }
 
+func (n nlist) String() string {
+	var s string
+	for _, v := range n {
+		s += fmt.Sprintf("%v\n", *v)
+	}
+	return s
+}
+
+func (j jlist) String() string {
+	var s string
+	for _, v := range j {
+		s += fmt.Sprintf("%v\n", *v)
+	}
+	return s
+}
+
 func main() {
 	err := dbOpen()
 	if err != nil {
@@ -119,6 +136,8 @@ func main() {
 		log.Printf("%v\n", err)
 		return
 	}
+	schedule()
+	fmt.Printf("%v\n%v\n", nodes, jobs)
 	l, err := net.Listen("tcp", conn.Port)
 	if err != nil {
 		log.Printf("%v\n", err)
