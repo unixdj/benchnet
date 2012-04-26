@@ -32,12 +32,24 @@ type job struct {
 	dirty bool     // relatively to db
 }
 
+const (
+	ldAdd = false
+	ldRm  = true
+)
+
+type linkDiff struct {
+	op            bool
+	jobId, nodeId uint64
+}
+
 type jlist []*job
 type nlist []*node
+type ldlist []linkDiff
 
 var (
-	jobs  jlist // list of jobs (sorted by geo?)
-	nodes nlist // list of nodes
+	jobs  jlist  // list of jobs (sorted by geo?)
+	nodes nlist  // list of nodes
+	diffs ldlist // list of links to add/delete
 )
 
 var errDataType = errors.New("wrong data type")
@@ -55,7 +67,7 @@ func (b *blob) ScanInto(value interface{}) error {
 }
 
 // index returns index in l where job with given id is or should be.
-func (l jobList) index(id int) int {
+func (l jobList) index(id uint64) int {
 	return sort.Search(len(l), func(i int) bool { return l[i].Id >= id })
 }
 
@@ -75,10 +87,39 @@ func (n *node) canRun(j *job) bool {
 	return !j.in(n.jobs) && j.capa <= n.capa-n.used
 }
 
+func add(op bool, j *job, n *node) {
+	var (
+		l    = linkDiff{op, j.d.Id, n.id}
+		notl = linkDiff{!op, j.d.Id, n.id}
+	)
+	for i, v := range diffs {
+		switch v {
+		case notl:
+			diffs = append(diffs[:i], diffs[i+1:]...)
+			return
+		case l:
+			return // XXX panic?
+		}
+	}
+	if dlen := len(diffs); dlen == cap(diffs) {
+		switch {
+		case dlen == 0:
+			dlen = 16
+		case dlen < 1<<10: // 1K
+			dlen <<= 1
+		default:
+			dlen += 1 << 10
+		}
+		diffs = append(make(ldlist, 0, dlen), diffs...)
+	}
+	diffs = append(diffs, l)
+}
+
 func crossLink(j *job, n *node) {
 	i := n.jobs.index(j.d.Id)
 	n.jobs = append(n.jobs[:i], append(jobList{j.d}, n.jobs[i:]...)...)
 	j.nodes = append(j.nodes, n.id)
+	add(ldAdd, j, n)
 }
 
 // addJob adds j to n's job list.
@@ -86,10 +127,10 @@ func (n *node) addJob(j *job) {
 	crossLink(j, n)
 	n.used += j.capa
 	n.dirty = true
-	j.dirty = true
+	//j.dirty = true
 }
 
-// addJob tries to add all jobs in list l to n's job list.
+// addJobs tries to add all jobs in list l to n's job list.
 func (n *node) addJobs(l []job) {
 	for i := range l {
 		if (&l[i]).runnable() && n.canRun(&l[i]) {
@@ -135,8 +176,6 @@ func schedule() {
 							return
 						}
 					}
-					// TODO: move jobs to another list
-					// instead of the above?
 					break
 				}
 			}

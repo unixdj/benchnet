@@ -12,7 +12,7 @@ import (
 )
 
 type jobDesc struct {
-	Id            int
+	Id            uint64
 	Period, Start int
 	Check         []string
 }
@@ -27,7 +27,7 @@ var jobs = jobList{
 }
 */
 
-const clientLastTime = 1324105000000000000 // or so
+//const clientLastTime = 1324105000000000000 // or so
 var (
 	dbfile    = "srv.db"
 	clientKey = []byte("" +

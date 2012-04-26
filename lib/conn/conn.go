@@ -44,8 +44,9 @@ type Node struct {
 }
 
 var (
-	ErrProto = errors.New("protocol error")
-	ErrSig   = errors.New("signature mismatch")
+	ErrProto   = errors.New("protocol error")
+	ErrSig     = errors.New("signature mismatch")
+	ErrKeySize = errors.New("invalid key size")
 )
 
 // Conn represents a connection on either side.
@@ -171,15 +172,19 @@ func (c *Conn) ReceiveChallenge() error {
 }
 
 // SetKey sets the hash key.
-func (c *Conn) SetKey(key []byte) {
+func (c *Conn) SetKey(key []byte) error {
+	if len(key) != KeySize {
+		return ErrKeySize
+	}
 	c.h = hmac.New(sha256.New, key)
+	return nil
 }
 
 // New wraps net.Conn and returns *Conn.
 // You may want to call SetKey() later.
 func New(nc net.Conn) (*Conn, error) {
-	// XXX: setting deadline to now + 1 min
-	if err := nc.SetDeadline(time.Now().Add(60 * time.Second)); err != nil {
+	// XXX: setting deadline to now + 10 min
+	if err := nc.SetDeadline(time.Now().Add(10 * time.Minute)); err != nil {
 		return nil, err
 	}
 	return &Conn{c: nc, r: bufio.NewReader(nc), w: bufio.NewWriter(nc)}, nil
@@ -196,7 +201,10 @@ func Dial(af, addr string, key []byte) (*Conn, error) {
 		nc.Close()
 		return nil, err
 	}
-	c.h = hmac.New(sha256.New, key)
+	if err = c.SetKey(key); err != nil {
+		nc.Close()
+		return nil, err
+	}
 	return c, nil
 }
 
