@@ -129,6 +129,40 @@ func (b *blob) Scan(value interface{}) error {
 	return nil
 }
 
+func (n *node) String() string {
+	s := fmt.Sprintf("Node %v\nlastSeen %v\n"+
+		"capacity %v, used %v\ngeolocation %v\nkey %x\njobs:",
+		n.id, time.Unix(0, int64(n.lastSeen)),
+		n.capa, n.used, n.loc, n.key)
+	for _, j := range n.jobs {
+		s += fmt.Sprintf(" %v", j.Id)
+	}
+	return s + "\n\n"
+}
+
+func (j *job) String() string {
+	return fmt.Sprintf("Job %v\nperiod %vs, start %v\ncapacity %v\n"+
+		"check %+q\nnodes %v (%v/%v)\n\n",
+		j.Id, j.Period, j.Start, j.capa,
+		j.Check, j.nodes, len(j.nodes), cap(j.nodes))
+}
+
+func (n nlist) String() string {
+	var s string
+	for _, v := range n {
+		s += v.String()
+	}
+	return s
+}
+
+func (j jlist) String() string {
+	var s string
+	for _, v := range j {
+		s += v.String()
+	}
+	return s
+}
+
 func (l jlist) Len() int           { return len(l) }
 func (l jlist) Less(i, j int) bool { return l[i].Id < l[j].Id }
 func (l jlist) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
