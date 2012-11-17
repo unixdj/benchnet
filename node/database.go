@@ -109,7 +109,8 @@ func loadJobs() error {
 		}
 		j.Check = strings.Fields(s)
 		if !addJob(&j, false) {
-			fmt.Printf("invalid job %d: %v\n", j.Id, j.Check)
+			log.Err(fmt.Sprintf("invalid job %d: %v",
+				j.Id, j.Check))
 			continue
 		}
 	}
@@ -125,7 +126,8 @@ func insertResult(r *check.Result) error {
 
 var errSyntax = errors.New("syntax error")
 
-// Parse quoted strings of form: ["one" "two\r\n\xcc" "three"]
+// Parse quoted strings of the form:
+//	["one" "two\r\n\xcc" "three"]
 func parseStringArray(s string) ([]string, error) {
 	a := make([]string, 0, 4)
 	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
@@ -155,6 +157,9 @@ func parseStringArray(s string) ([]string, error) {
 				break
 			}
 		}
+		if end == 0 {
+			return nil, errSyntax
+		}
 		t := s[:end]
 		if end != len(s) {
 			if s[end] != ' ' {
@@ -172,7 +177,7 @@ func parseStringArray(s string) ([]string, error) {
 }
 
 func loadResults(from, till uint64) ([]*check.Result, error) {
-	fmt.Printf("loadResults: from %d to %d\n", from, till)
+	//log.Debug(fmt.Sprintf("loadResults: from %d to %d", from, till))
 	rows, err := dbc.Query(dbSelectResults, from, till)
 	if err != nil {
 		return nil, err
@@ -189,16 +194,8 @@ func loadResults(from, till uint64) ([]*check.Result, error) {
 		if r.S, err = parseStringArray(s); err != nil {
 			return nil, err
 		}
-		if ralen := len(ra); ralen == cap(ra) {
-			if ralen < 1<<13 { // 8*1024
-				ralen <<= 1
-			} else {
-				ralen += 1 << 13
-			}
-			ra = append(make([]*check.Result, 0, ralen), ra...)
-		}
 		ra = append(ra, r)
 	}
-	fmt.Printf("loadResults: %d\n", len(ra))
+	//log.Debug(fmt.Sprintf("loadResults: %d", len(ra)))
 	return ra, nil
 }

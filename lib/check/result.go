@@ -12,7 +12,7 @@ const (
 
 // Result represents the result of the check.
 type Result struct {
-	JobId int      // Id of job that started the check
+	JobId uint64   // Id of job that started the check
 	Flags int      // Flags (failure)
 	Start int64    // Time the check ran, nanoseconds since Unix epoch
 	RT    int64    // Run Time of the check, nanoseconds

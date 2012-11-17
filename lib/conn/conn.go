@@ -116,8 +116,8 @@ func (c *Conn) Read(buf []byte) (int, error) {
 	return n, nil
 }
 
-// This function is here to implement io.ByteReader, because if
-// we don't, the gob decoder will wrap us in a bufio.Reader and
+// ReadByte is here to implement io.ByteReader, because if we
+// don't, the gob decoder will wrap us in a bufio.Reader and
 // overread the data from the connection.  However, gob never
 // actually calls ReadByte.
 func (c *Conn) ReadByte() (byte, error) {
@@ -169,6 +169,10 @@ func (c *Conn) ReceiveChallenge() error {
 	}
 	c.chalUs = buf
 	return nil
+}
+
+func (c *Conn) RemoteAddr() net.Addr {
+	return c.c.RemoteAddr()
 }
 
 // SetKey sets the hash key.

@@ -1,5 +1,3 @@
-include $(GOROOT)/src/Make.inc
-
 TARG=srv
 GOFILES=main.go
 DIRS=../lib/conn ../lib/check
@@ -7,6 +5,7 @@ DIRS=../lib/conn ../lib/check
 PREREQ=$(addsuffix .install, $(DIRS))
 
 all:
+	go build
 
 clean: $(addsuffix .clean, $(DIRS))
 
@@ -16,4 +15,4 @@ clean: $(addsuffix .clean, $(DIRS))
 %.install:
 	$(MAKE) -C $* install
 
-include $(GOROOT)/src/Make.cmd
+#include $(GOROOT)/src/Make.cmd

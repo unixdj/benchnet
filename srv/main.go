@@ -1,119 +1,142 @@
 package main
 
 import (
-	"benchnet/lib/check"
 	"benchnet/lib/conn"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
+	"log/syslog"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
-type jobDesc struct {
-	Id            uint64
-	Period, Start int
-	Check         []string
-}
+var log *syslog.Writer
+var dying bool
 
-type jobList []jobDesc
-
-/*
-var jobs = jobList{
-	{0, 3, 3, []string{"dns", "not.found"}},
-	{1, 7, 3, []string{"dns", "foo.bar"}},
-	{3, 20, 10, []string{"http", "get", "http://foo.bar/"}},
-}
-*/
-
-//const clientLastTime = 1324105000000000000 // or so
-var (
-	dbfile    = "srv.db"
-	clientKey = []byte("" +
-		"\x00\x01\x02\x03\x04\x05\x06\x07" +
-		"\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f" +
-		"\x10\x11\x12\x13\x14\x15\x16\x17" +
-		"\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f")
+type (
+	connData struct {
+		n *node
+		r []result
+	}
+	step func(*conn.Conn, *connData) (step, error)
 )
 
-type step func(*conn.Conn, *node) (step, error)
-
-func sendGreet(s *conn.Conn, n *node) (step, error) {
+func sendGreet(c *conn.Conn, d *connData) (step, error) {
 	greets := make([]byte, len(conn.Greet))
 	copy(greets, conn.Greet)
-	return authClient, s.SendChallenge(greets)
+	return authClient, c.SendChallenge(greets)
 }
 
-func authClient(s *conn.Conn, n *node) (step, error) {
-	buf := make([]byte, 16)
-	_, err := io.ReadFull(s, buf)
+func authClient(c *conn.Conn, d *connData) (step, error) {
+	var buf [16]byte
+	_, err := io.ReadFull(c, buf[:])
 	if err != nil {
 		return nil, err
 	}
-	clientId := binary.BigEndian.Uint64(buf)
-	nodeId := binary.BigEndian.Uint64(buf[8:])
-	if clientId != nodeId {
-		panic("test")
+	//clientId := binary.BigEndian.Uint64(buf[:8])
+	id := binary.BigEndian.Uint64(buf[8:])
+	d.n = getNode(id)
+	if d.n == nil {
+		return nil, nodeNotFoundError(id)
 	}
-	log.Printf("node id %d\n", nodeId)
-	*n, err = selectNode(nodeId)
-	log.Printf("node key %x\n", n.key)
-	if err != nil {
+	c.SetKey(d.n.key)
+	c.WriteToHash(buf[:])
+	if err = c.CheckSig(); err != nil {
 		return nil, err
 	}
-	s.SetKey(n.key)
-	s.WriteToHash(buf)
-	if err = s.CheckSig(); err != nil {
-		return nil, err
-	}
-	log.Printf("sig ok\n")
-	return recvLogs, s.ReceiveChallenge()
+	log.Info(fmt.Sprintf("client %s: authenticated node %d",
+		c.RemoteAddr(), id))
+	return recvLogs, c.ReceiveChallenge()
 }
 
-func recvLogs(s *conn.Conn, n *node) (step, error) {
+func recvLogs(c *conn.Conn, d *connData) (step, error) {
 	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], n.lastSeen)
-	if _, err := s.Write(buf[:]); err != nil {
+	binary.BigEndian.PutUint64(buf[:], d.n.lastSeen)
+	_, err := c.Write(buf[:])
+	if err != nil {
 		return nil, err
 	}
-	if err := s.SendSig(); err != nil {
+	if err = c.SendSig(); err != nil {
 		return nil, err
 	}
-	var results []check.Result
-	if err := gob.NewDecoder(s).Decode(&results); err != nil {
+	d.n.lastSeen = uint64(time.Now().UnixNano())
+	if err = gob.NewDecoder(c).Decode(&d.r); err != nil {
 		return nil, err
 	}
-	log.Printf("%v\n", results)
-	return nil, nil
+	for i := range d.r {
+		d.r[i].nodeId = d.n.id
+	}
+	return sendJobs, c.CheckSig()
 }
 
-func handle(c net.Conn) {
-	s, err := conn.New(c)
+func sendJobs(c *conn.Conn, d *connData) (step, error) {
+	if err := gob.NewEncoder(c).Encode(d.n.jobs); err != nil {
+		return nil, err
+	}
+	return recvBye, c.SendSig()
+}
+
+func recvBye(c *conn.Conn, d *connData) (step, error) {
+	var buf [1]byte
+	_, err := io.ReadFull(c, buf[:])
 	if err != nil {
-		c.Close()
-		log.Printf("handle: %v\n", err)
+		return nil, err
+	}
+	if buf[0] != 0 {
+		return nil, conn.ErrProto
+	}
+	return nil, c.CheckSig()
+}
+
+func handle(nc net.Conn) {
+	client := "client " + nc.RemoteAddr().String()
+	cc, err := conn.New(nc)
+	if err != nil {
+		nc.Close()
+		log.Err(client + ": handle: " + err.Error())
 		return
 	}
-	defer s.Close()
-	log.Printf("handle\n")
-	var n node
-	f, err := sendGreet(s, &n)
+	defer cc.Close()
+	var d connData
+	f, err := sendGreet(cc, &d)
 	for f != nil && err == nil {
-		log.Printf("step\n")
-		f, err = f(s, &n)
+		f, err = f(cc, &d)
 	}
 	if err != nil {
-		log.Printf("handle: %v\n", err)
-	} else {
-		log.Printf("ok\n")
+		log.Err(client + ": handle: " + err.Error())
+		return
 	}
+	log.Notice(client + ": connection completed")
+	nodeSeen(d.n)
+	addResults(d.r)
+}
+
+func (n *node) String() string {
+	s := fmt.Sprintf("Node %v\nlastSeen %v\n"+
+		"capacity %v, used %v\ngeolocation %v\nkey %x\njobs:",
+		n.id, time.Unix(0, int64(n.lastSeen)),
+		n.capa, n.used, n.loc, n.key)
+	for _, j := range n.jobs {
+		s += fmt.Sprintf(" %v", j.Id)
+	}
+	return s + "\n\n"
+}
+
+func (j *job) String() string {
+	return fmt.Sprintf("Job %v\nperiod %vs, start %v\ncapacity %v\n"+
+		"check %+q\nnodes %v (%v/%v)\n\n",
+		j.Id, j.Period, j.Start, j.capa,
+		j.Check, j.nodes, len(j.nodes), cap(j.nodes))
 }
 
 func (n nlist) String() string {
 	var s string
 	for _, v := range n {
-		s += fmt.Sprintf("%v\n", *v)
+		s += v.String()
 	}
 	return s
 }
@@ -121,38 +144,73 @@ func (n nlist) String() string {
 func (j jlist) String() string {
 	var s string
 	for _, v := range j {
-		s += fmt.Sprintf("%v\n", *v)
+		s += v.String()
 	}
 	return s
 }
 
-func main() {
-	err := dbOpen()
-	if err != nil {
-		log.Printf("%v\n", err)
-		return
-	}
-	if err = loadDB(); err != nil {
-		log.Printf("%v\n", err)
-		return
-	}
-	schedule()
-	fmt.Printf("%v\n%v\n", nodes, jobs)
-	l, err := net.Listen("tcp", conn.Port)
-	if err != nil {
-		log.Printf("%v\n", err)
-		return
-	}
-	defer l.Close()
+func netLoop(l net.Listener, handler func(net.Conn), name string) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
-			log.Printf("accept: %v", err)
+			if dying {
+				log.Debug(name + " loop killed")
+				return
+			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				log.Warning("accept: " + ne.Error())
 				continue
 			}
-			return
+			log.Err("accept: " + err.Error())
+			break
 		}
-		go handle(c)
+		log.Notice(fmt.Sprintf("accept %s connection from %s",
+			name, c.RemoteAddr()))
+		go handler(c)
 	}
+}
+
+func main() {
+	var err error
+	log, err = syslog.New(syslog.LOG_INFO,
+		fmt.Sprintf("benchnet[%d]", os.Getpid()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "can't connect to syslog: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Close()
+	killme := make(chan os.Signal, 5)
+	signal.Notify(killme, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT,
+		syscall.SIGPIPE, syscall.SIGTERM)
+	initDone := make(chan error)
+	killData := make(chan bool, 1) // async
+	dataDone := make(chan bool)
+	go dataLoop(initDone, killData, dataDone)
+	// wait for data loop to initialize
+	if err := <-initDone; err != nil {
+		log.Crit(err.Error())
+		return
+	}
+	defer func() {
+		killData <- true
+		<-dataDone
+	}()
+	//log.Debug(fmt.Sprintf("%v\n%v\n", nodes, jobs))
+	l, err := net.Listen("tcp", conn.Port)
+	if err != nil {
+		log.Crit("FATAL: " + err.Error())
+		return
+	}
+	defer l.Close()
+	go netLoop(l, handle, "client")
+	m, err := net.Listen("tcp", "127.0.0.1:25197") // "bm" for benchmgmt
+	if err != nil {
+		log.Crit("FATAL: " + err.Error())
+		return
+	}
+	defer m.Close()
+	go netLoop(m, mgmtHandle, "management")
+	log.Notice("RUNNING")
+	log.Notice("EXIT: " + (<-killme).String())
+	dying = true
 }

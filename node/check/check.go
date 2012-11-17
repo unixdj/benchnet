@@ -22,6 +22,9 @@ func errResult(err error) *Result {
 	return &Result{Flags: ResFail, Errs: err.Error()}
 }
 
+// Maps are slow, arrays would be more efficient here.
+// We don't care, because premature optimisation and all that.
+
 // hierarchial maps of checks; see runCheck()
 type checkMap map[string]struct {
 	f func(checkMap, []string, bool) *Result // function to run
@@ -135,7 +138,7 @@ func IsValid(s []string) bool {
 }
 
 // Run runs the check represented by s.
-func Run(id int, s []string) *Result {
+func Run(id uint64, s []string) *Result {
 	start := time.Now()
 	r := runCheck(checks, s, false)
 	r.JobId, r.Start, r.RT = id, start.UnixNano(), int64(time.Now().Sub(start))

@@ -6,7 +6,7 @@
 // (*Rows).Next() returns false or (*Rows).Close() is called.
 // So do it fast and close it good.
 //
-// Same goes for QueryRow() after which onw (*Row).Scan() should
+// Same goes for QueryRow() after which one (*Row).Scan() should
 // be issued, and Begin(), which should be finished off with
 // (*Tx).Commit() or (*Tx).Rollback().
 package stdb
@@ -156,7 +156,14 @@ func (db *DB) handleTx(r *req) {
 }
 
 // main loop
-func (db *DB) thread() {
+func (db *DB) thread(driverName, dataSourceName string, c chan<- error) {
+	var err error
+	db.dbc, err = sql.Open(driverName, dataSourceName)
+	c <- err
+	close(c)
+	if err != nil {
+		return
+	}
 	for {
 		r := <-db.c
 		switch r.op {
@@ -180,12 +187,12 @@ func (db *DB) thread() {
 
 // Open(): start thread
 func Open(driverName, dataSourceName string) (*DB, error) {
-	dbc, err := sql.Open(driverName, dataSourceName)
-	if err != nil {
+	db := &DB{nil, make(chan req)}
+	c := make(chan error)
+	go db.thread(driverName, dataSourceName, c)
+	if err := <-c; err != nil {
 		return nil, err
 	}
-	db := &DB{dbc, make(chan req)}
-	go db.thread()
 	return db, nil
 }
 

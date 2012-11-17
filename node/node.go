@@ -2,19 +2,21 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"github.com/unixdj/conf"
+	"log/syslog"
 	"os"
+	"os/signal"
 	"regexp"
-	"strconv"
-	"strings"
+	"syscall"
+	"time"
 )
 
 var (
 	conffile         = "bench.conf"
 	dbfile           = "bench.db"
+	serverAddr       = "localhost"
 	clientId, nodeId uint64
 	networkKey       []byte
 	netKeyRE         = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
@@ -61,30 +63,21 @@ func readConf() error {
 	})
 }
 
+/*
 // crude parser for now
 func interact() error {
 	in := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Printf("bench:node> ")
-		b, ispref, err := in.ReadLine()
+		s, err := in.ReadString('\n')
 		if err != nil {
 			return err
 		}
-		if ispref {
-			fmt.Printf("A line longer than 4K, srsly?  Get out.\n")
-			for ispref {
-				_, ispref, err = in.ReadLine()
-				if err != nil {
-					return err
-				}
-			}
+		f := strings.Fields(s)
+		if len(f) == 0 {
 			continue
 		}
-		s := strings.Fields(string(b))
-		if len(s) == 0 {
-			continue
-		}
-		switch s[0] {
+		switch f[0] {
 		case "q":
 			return nil
 		case "c":
@@ -101,23 +94,23 @@ func interact() error {
 					v.Id, v.Period, v.Check, status)
 			}
 		case "k":
-			if len(s) != 2 {
+			if len(f) != 2 {
 				fmt.Printf("usage: k <jobid>\n")
 				continue
 			}
-			n, err := strconv.ParseInt(s[1], 10, 0)
+			n, err := strconv.ParseInt(f[1], 10, 0)
 			if err != nil {
-				fmt.Printf("%s not a number: %s\n", s[1], err)
+				fmt.Printf("%s not a number: %s\n", f[1], err)
 				continue
 			}
-			if !killJob(int(n)) {
+			if !killJob(uint64(n)) {
 				fmt.Printf("no such job: %d\n", int(n))
 			}
 			if err = deleteJob(int(n)); err != nil {
 				fmt.Printf("Exec: %s\n", err)
 			}
 		case "a":
-			if len(s) < 4 {
+			if len(f) < 4 {
 				fmt.Printf(`usage: a <jobid> <period> <check>
 e.g.:
 a 0 60 dns foo.bar
@@ -125,21 +118,21 @@ a 1 86400 http get http://foo.bar/
 `)
 				continue
 			}
-			id, err := strconv.ParseUint(s[1], 10, 0)
+			id, err := strconv.ParseUint(f[1], 10, 0)
 			if err != nil {
 				fmt.Printf("%s not a positive number: %s\n", s[1], err)
 				continue
 			}
-			p, err := strconv.ParseInt(s[2], 10, 0)
+			p, err := strconv.ParseInt(f[2], 10, 0)
 			if err != nil || p < 3 || p > 86400 {
-				fmt.Printf("%s should be a number between 3 and 86400\n", s[2])
+				fmt.Printf("%s should be a number between 3 and 86400\n", f[2])
 				continue
 			}
 			j := jobDesc{
-				Id:     int(id),
+				Id:     uint64(id),
 				Period: int(p),
 				Start:  int(p) / 2,
-				Check:  s[3:],
+				Check:  f[3:],
 			}
 			if !addJob(&j, true) {
 				fmt.Printf("invalid job %d: %v\n", j.Id, j.Check)
@@ -156,27 +149,62 @@ a 1 86400 http get http://foo.bar/
 	// NOTREACHED
 	return nil
 }
+*/
+
+var log *syslog.Writer
+
+func openLog() error {
+	var err error
+	log, err = syslog.New(syslog.LOG_INFO,
+		fmt.Sprintf("benchnet.node[%d]", os.Getpid()))
+	return err
+}
+
+func closeLog() {
+	log.Close()
+}
+
+func netLoop() {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		talk() // connect to server immediately
+		<-t.C
+	}
+}
 
 func main() {
-	err := readConf()
+	err := openLog()
 	if err != nil {
-		fmt.Printf("%s\n", err)
+		fmt.Fprintf(os.Stderr, "can't connect to syslog: %v", err)
+		os.Exit(1)
+	}
+	defer closeLog()
+	killme := make(chan os.Signal, 5)
+	signal.Notify(killme, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT,
+		syscall.SIGPIPE, syscall.SIGTERM)
+	if err = readConf(); err != nil {
+		log.Crit(err.Error())
+		os.Exit(1)
 	}
 	err = dbOpen()
 	if dbc == nil {
-		fmt.Printf("can't open database: %s\n", err)
-		return
+		log.Crit("can't open database: " + err.Error())
+		os.Exit(1)
 	}
 	defer dbc.Close()
 	if err != nil {
-		fmt.Printf("can't init database: %s\n", err)
-		return
+		dbc.Close()
+		log.Crit("can't init database: " + err.Error())
+		os.Exit(1)
 	}
 	if err = loadJobs(); err != nil {
-		fmt.Printf("error while loading jobs from database: %s\n", err)
+		dbc.Close()
+		log.Crit("error while loading jobs from database: " + err.Error())
+		os.Exit(1)
 	}
 	defer killJobs()
-	if err = interact(); err != nil {
-		fmt.Printf("%s\n", err)
-	}
+	go netLoop()
+	log.Notice("RUNNING")
+	log.Notice("EXIT: " + (<-killme).String())
 }

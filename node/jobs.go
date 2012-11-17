@@ -9,7 +9,7 @@ import (
 )
 
 type jobDesc struct {
-	Id            int
+	Id            uint64
 	Period, Start int
 	Check         []string
 	s             *sched.Sched
@@ -34,7 +34,7 @@ func (l jobList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 // job control
 
 // findJob:
-func findJob(id int) (i int, found bool) {
+func findJob(id uint64) (i int, found bool) {
 	i = sort.Search(len(jobs), func(i int) bool { return jobs[i].Id >= id })
 	return i, i < len(jobs) && jobs[i].Id == id
 }
@@ -60,7 +60,7 @@ func killJobs() {
 	}
 }
 
-func killJob(id int) bool {
+func killJob(id uint64) bool {
 	i, ok := findJob(id)
 	if !ok {
 		return false
@@ -72,20 +72,13 @@ func killJob(id int) bool {
 
 func scheduleJob(j *jobDesc) {
 	j.s = sched.New(int2dur(j.Period), int2dur(j.Start), func() {
-		//fmt.Printf("%d: %s (start)\n", id, t)
 		r := check.Run(j.Id, j.Check)
-		s := "ok"
-		if r.Flags&check.ResFail != 0 {
-			s = r.Errs
-		}
-		fmt.Printf("%d: %s %+.24q\n", j.Id, s, r.S)
-		//fmt.Printf("%d: %s\n%s\n", id, t, r)
 		if err := insertResult(r); err != nil {
-			fmt.Printf("Exec: %s\n", err)
+			log.Err(err.Error())
 		}
 	})
-	fmt.Printf("start job %d: period %d, start %d, check %v\n",
-		j.Id, j.Period, j.Start, j.Check)
+	log.Debug(fmt.Sprintf("start job %d: period %d, start %d, check %v",
+		j.Id, j.Period, j.Start, j.Check))
 }
 
 func addJob(j *jobDesc, start bool) bool {
@@ -95,7 +88,7 @@ func addJob(j *jobDesc, start bool) bool {
 	i, found := findJob(j.Id)
 	if found {
 		jobs[i].s.Stop()
-		fmt.Printf("killed job %d\n", j.Id)
+		log.Debug(fmt.Sprintf("killed job %d", j.Id))
 		jobs[i] = *j
 	} else {
 		jobs = append(jobs[:i], append(jobList{*j}, jobs[i:]...)...)
