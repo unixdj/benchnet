@@ -76,10 +76,7 @@ func durFuzz(dur time.Duration, fuzz time.Duration) time.Duration {
 	return dur - fuzz + time.Duration(rand.Int63n(int64(fuzz)*2))
 }
 
-func netLoop(headShot <-chan bool, done chan<- bool) {
-	defer func() {
-		done <- true
-	}()
+func netLoop(headShot <-chan bool) {
 	rand.Seed(int64(time.Now().UnixNano()))
 	var dur time.Duration
 	for {
@@ -93,6 +90,7 @@ func netLoop(headShot <-chan bool, done chan<- bool) {
 		t := time.NewTimer(dur)
 		select {
 		case <-headShot:
+			log.Debug("net loop done")
 			t.Stop()
 			return
 		case <-t.C:
@@ -136,13 +134,15 @@ func main() {
 		log.Crit("error while loading jobs from database: " + err.Error())
 		os.Exit(1)
 	}
-	defer killJobs()
-
 	killNet := make(chan bool)
-	netDone := make(chan bool)
-	go netLoop(killNet, netDone)
+	go netLoop(killNet)
 	defer func() {
-		killNet <- true
+		netDone := make(chan bool)
+		go func() {
+			killNet <- true
+			netDone <- true
+		}()
+		killJobs()
 		<-netDone
 	}()
 

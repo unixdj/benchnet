@@ -47,10 +47,11 @@ func killJobs() {
 		if v.s == nil {
 			continue
 		}
-		go func(s *sched.Sched) {
+		go func(s *sched.Sched, id uint64) {
 			s.Stop()
+			log.Debug(fmt.Sprintf("killed job %d", id))
 			c <- true
-		}(v.s)
+		}(v.s, v.Id)
 		jobs[i].s = nil // mark as not running
 		k++
 	}
@@ -66,6 +67,7 @@ func killJob(id uint64) bool {
 		return false
 	}
 	jobs[i].s.Stop()
+	log.Debug(fmt.Sprintf("killed job %d", jobs[i].Id))
 	jobs = append(jobs[0:i], jobs[i+1:]...) // delete from list
 	return true
 }
