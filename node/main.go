@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/unixdj/conf"
 	"log/syslog"
+	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 )
 
 var (
+	log              *syslog.Writer
 	conffile         = "bench.conf"
 	dbfile           = "bench.db"
 	serverAddr       = "localhost"
@@ -63,130 +65,60 @@ func readConf() error {
 	})
 }
 
-/*
-// crude parser for now
-func interact() error {
-	in := bufio.NewReader(os.Stdin)
+const (
+	reconnectTime = time.Hour
+	reconnectFuzz = time.Minute * 10
+	retryTime     = time.Minute * 10
+	retryFuzz     = time.Minute * 2
+)
+
+func durFuzz(dur time.Duration, fuzz time.Duration) time.Duration {
+	return dur - fuzz + time.Duration(rand.Int63n(int64(fuzz)*2))
+}
+
+func netLoop(headShot <-chan bool, done chan<- bool) {
+	defer func() {
+		done <- true
+	}()
+	rand.Seed(int64(time.Now().UnixNano()))
+	var dur time.Duration
 	for {
-		fmt.Printf("bench:node> ")
-		s, err := in.ReadString('\n')
-		if err != nil {
-			return err
+		ok := talk() // connect to server immediately
+		if ok {
+			dur = durFuzz(reconnectTime, reconnectFuzz)
+		} else {
+			dur = durFuzz(retryTime, retryFuzz)
 		}
-		f := strings.Fields(s)
-		if len(f) == 0 {
-			continue
+		log.Debug(fmt.Sprintf("next connection in %v", dur))
+		t := time.NewTimer(dur)
+		select {
+		case <-headShot:
+			t.Stop()
+			return
+		case <-t.C:
 		}
-		switch f[0] {
-		case "q":
-			return nil
-		case "c":
-			if err := talk(); err != nil {
-				fmt.Printf("%s\n", err)
-			}
-		case "l":
-			for _, v := range jobs {
-				var status string
-				if v.s == nil {
-					status = " (not running)"
-				}
-				fmt.Printf("id %d, every %ds, check %s%s\n",
-					v.Id, v.Period, v.Check, status)
-			}
-		case "k":
-			if len(f) != 2 {
-				fmt.Printf("usage: k <jobid>\n")
-				continue
-			}
-			n, err := strconv.ParseInt(f[1], 10, 0)
-			if err != nil {
-				fmt.Printf("%s not a number: %s\n", f[1], err)
-				continue
-			}
-			if !killJob(uint64(n)) {
-				fmt.Printf("no such job: %d\n", int(n))
-			}
-			if err = deleteJob(int(n)); err != nil {
-				fmt.Printf("Exec: %s\n", err)
-			}
-		case "a":
-			if len(f) < 4 {
-				fmt.Printf(`usage: a <jobid> <period> <check>
-e.g.:
-a 0 60 dns foo.bar
-a 1 86400 http get http://foo.bar/
-`)
-				continue
-			}
-			id, err := strconv.ParseUint(f[1], 10, 0)
-			if err != nil {
-				fmt.Printf("%s not a positive number: %s\n", s[1], err)
-				continue
-			}
-			p, err := strconv.ParseInt(f[2], 10, 0)
-			if err != nil || p < 3 || p > 86400 {
-				fmt.Printf("%s should be a number between 3 and 86400\n", f[2])
-				continue
-			}
-			j := jobDesc{
-				Id:     uint64(id),
-				Period: int(p),
-				Start:  int(p) / 2,
-				Check:  f[3:],
-			}
-			if !addJob(&j, true) {
-				fmt.Printf("invalid job %d: %v\n", j.Id, j.Check)
-				continue
-			}
-			if err = insertJob(&j); err != nil {
-				fmt.Printf("Exec: %s\n", err)
-			}
-			fmt.Printf("id %d started\n", j.Id)
-		default:
-			fmt.Printf("say what?\n")
-		}
-	}
-	// NOTREACHED
-	return nil
-}
-*/
-
-var log *syslog.Writer
-
-func openLog() error {
-	var err error
-	log, err = syslog.New(syslog.LOG_INFO,
-		fmt.Sprintf("benchnet.node[%d]", os.Getpid()))
-	return err
-}
-
-func closeLog() {
-	log.Close()
-}
-
-func netLoop() {
-	t := time.NewTicker(time.Hour)
-	defer t.Stop()
-	for {
-		talk() // connect to server immediately
-		<-t.C
 	}
 }
 
 func main() {
-	err := openLog()
+	var err error
+	log, err = syslog.New(syslog.LOG_INFO,
+		fmt.Sprintf("benchnet.node[%d]", os.Getpid()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't connect to syslog: %v", err)
 		os.Exit(1)
 	}
-	defer closeLog()
+	defer log.Close()
+
 	killme := make(chan os.Signal, 5)
 	signal.Notify(killme, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT,
 		syscall.SIGPIPE, syscall.SIGTERM)
+
 	if err = readConf(); err != nil {
 		log.Crit(err.Error())
 		os.Exit(1)
 	}
+
 	err = dbOpen()
 	if dbc == nil {
 		log.Crit("can't open database: " + err.Error())
@@ -198,13 +130,23 @@ func main() {
 		log.Crit("can't init database: " + err.Error())
 		os.Exit(1)
 	}
+
 	if err = loadJobs(); err != nil {
 		dbc.Close()
 		log.Crit("error while loading jobs from database: " + err.Error())
 		os.Exit(1)
 	}
 	defer killJobs()
-	go netLoop()
+
+	killNet := make(chan bool)
+	netDone := make(chan bool)
+	go netLoop(killNet, netDone)
+	defer func() {
+		killNet <- true
+		<-netDone
+	}()
+
 	log.Notice("RUNNING")
+
 	log.Notice("EXIT: " + (<-killme).String())
 }

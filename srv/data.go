@@ -449,6 +449,7 @@ func schedule() {
 	}
 }
 
+// copyJob makes a deep copy of job jp.
 func copyJob(jp *job) *job {
 	j := *jp
 	j.nodes = make([]uint64, len(jp.nodes), cap(jp.nodes))
@@ -466,6 +467,7 @@ func doGetJob(id uint64) *job {
 	return copyJob(jp)
 }
 
+// copyNode makes a deep copy of node np.
 func copyNode(np *node) *node {
 	n := *np
 	n.jobs = make(jobList, len(np.jobs))
@@ -483,21 +485,12 @@ func doGetNode(id uint64) *node {
 	return copyNode(np)
 }
 
-func loadDB() error {
-	for _, f := range []func() error{loadNodes, loadJobs, loadRunning} {
-		if err := f(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func dataInit() error {
 	err := dbOpen()
 	if err != nil {
 		return err
 	}
-	if err = loadDB(); err != nil {
+	if err = dbLoad(); err != nil {
 		dbClose()
 		return err
 	}
@@ -513,7 +506,7 @@ func commit(done chan<- bool) {
 	d, r := diffs, results
 	diffs = make(difflist, 0, 16)
 	results = make(reslist, 0, 16)
-	go doCommit(d, r, done)
+	go dbCommit(d, r, done)
 }
 
 func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
@@ -536,7 +529,6 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 		if err := recover(); err != nil {
 			log.Crit(fmt.Sprintf("data loop: panic %v", err))
 		}
-		log.Debug("data loop exiting")
 		t.Stop()
 		if committing {
 			<-commitDone
@@ -550,13 +542,16 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 	schedReqChan <- true
 	for {
 		select {
+		case <-headShot:
+			log.Debug("data loop: headshot")
+			return
 		case r := <-commitDone:
 			if !committing {
 				log.Crit("dataLoop(): commit done while not committing")
 			} else if r {
 				log.Debug("data loop: commit done")
 			} else {
-				log.Debug("data loop: nothig to commit")
+				log.Debug("data loop: nothing to commit")
 			}
 			committing = false
 		case <-t.C:
@@ -576,11 +571,8 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 			log.Debug("data loop: node request")
 			r.c <- doGetNode(r.id)
 		case r := <-opChan:
-			log.Debug("data loop: add op")
+			log.Debug(fmt.Sprintf("data loop: add op %d", r.op))
 			doOp(r)
-		case <-headShot:
-			log.Debug("data loop: headshot")
-			return
 		}
 	}
 }

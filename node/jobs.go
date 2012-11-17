@@ -153,7 +153,7 @@ func mergeJobs(newjobs jobList) (status []bool, err error) {
 		if v {
 			j++
 		} else {
-			newjobs = append(newjobs[0:j], newjobs[j+1:]...)
+			newjobs = append(newjobs[:j], newjobs[j+1:]...)
 		}
 	}
 	if updated {

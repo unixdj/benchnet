@@ -10,22 +10,48 @@ import (
 )
 
 /*
-sqlite> .schema
-CREATE TABLE jobs (id integer primary key,
-		period integer, start integer, capa integer, want integer,
-		cmd string);
-CREATE TABLE nodes (id integer primary key,
-		last integer, capa integer, loc integer,
-		key blob[32]);
-CREATE TABLE running
-		(job integer, node integer);
-CREATE TABLE results
-		(node integer, job integer, start integer, duration integer,
-		flags integer, err text, result text);
-*/
+database schema:
 
+table nodes:
+	id	node id
+	last	time when node connected last, nanoseconds since Unix epoch
+	capa	total capacity of jobs the node is prepared to run
+	loc	geolocation
+	key	network key
+
+table jobs:
+	id	job id
+	period	period in seconds
+	start	offset in seconds; jobs run at Unix time N*period+start
+	capa	capacity (exact meaning TBD)
+	want	number of desired copies
+	cmd	the check to run (space-separated string)
+
+table running:
+	job	job id
+	node	node id
+
+table results:
+	node	 id of node that ran the job
+	job	 id of job that generated the result
+	start	 time when the run started, nanoseconds since Unix epoch
+	duration overall time for this run, in nanoseconds
+	flags	 1 for error, mostly
+	result	 encoded ("%+q") string array of results
+*/
 const (
-	dbfile          = "srv.db"
+	dbfile        = "srv.db"
+	dbCreateNodes = `CREATE TABLE IF NOT EXISTS nodes
+		(id integer primary key, last integer, capa integer,
+		loc integer, key blob[32])`
+	dbCreateJobs = `CREATE TABLE IF NOT EXISTS jobs
+		(id integer primary key, period integer, start integer,
+		capa integer, want integer, cmd string)`
+	dbCreateRunning = `CREATE TABLE IF NOT EXISTS running
+		(job integer, node integer)`
+	dbCreateResults = `CREATE TABLE IF NOT EXISTS results
+		(node integer, job integer, start integer, duration integer,
+		flags integer, err text, result text)`
 	dbSelectNodes   = "SELECT id, last, capa, loc, key FROM nodes"
 	dbInsertNode    = "INSERT OR REPLACE INTO nodes (id, last, capa, loc, key) VALUES (?, ?, ?, ?, ?)"
 	dbDeleteNode    = "DELETE FROM nodes WHERE id=?"
@@ -59,7 +85,26 @@ func dbOpen() error {
 	if err != nil {
 		return err
 	}
-	return err
+	for _, v := range []string{
+		dbCreateJobs,
+		dbCreateNodes,
+		dbCreateRunning,
+		dbCreateResults,
+	} {
+		if _, err = dbc.Exec(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dbLoad() error {
+	for _, f := range []func() error{loadNodes, loadJobs, loadRunning} {
+		if err := f(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func dbClose() error {
@@ -68,28 +113,6 @@ func dbClose() error {
 	}
 	return nil
 }
-
-/*
-func selectNode(id uint64) (n node, err error) {
-	n = node{id: id}
-	// Can't use QueryRow():
-	// http://code.google.com/p/go/issues/detail?id=2622
-	rows, err := dbc.Query(dbSelectNode, id)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return n, sql.ErrNoRows
-	}
-	var key []byte
-	if err = rows.Scan(&key); err != nil {
-		return
-	}
-	n.key = append([]byte{}, key...)
-	return n, err
-}
-*/
 
 func loadNodes() error {
 	rows, err := dbc.Query(dbSelectNodes)
@@ -168,7 +191,7 @@ func loadRunning() error {
 	return nil
 }
 
-func doCommit(diffs difflist, results reslist, done chan<- bool) {
+func dbCommit(diffs difflist, results reslist, done chan<- bool) {
 	log.Debug("commit starting")
 	defer func() {
 		log.Debug("commit done")
@@ -176,7 +199,7 @@ func doCommit(diffs difflist, results reslist, done chan<- bool) {
 	}()
 	tx, err := dbc.Begin()
 	if err != nil {
-		log.Err(fmt.Sprintf("sql.Begin:", err))
+		log.Err("sql.Begin: " + err.Error())
 		return
 	}
 	for _, v := range diffs {
@@ -200,9 +223,9 @@ func doCommit(diffs difflist, results reslist, done chan<- bool) {
 			log.Crit(fmt.Sprintf("interal error: invalid database operation %d", v.op))
 		}
 		if err != nil {
-			log.Err(fmt.Sprintf("sql.Exec: %v", err))
+			log.Err("sql.Exec: %v" + err.Error())
 			if err = tx.Rollback(); err != nil {
-				log.Err(fmt.Sprintf("sql.Rollback:", err))
+				log.Err("sql.Rollback: " + err.Error())
 			}
 			return
 		}
@@ -211,14 +234,14 @@ func doCommit(diffs difflist, results reslist, done chan<- bool) {
 		_, err := tx.Exec(dbInsertResult, v.nodeId, v.JobId, v.Start,
 			v.RT, v.Flags, v.Errs, fmt.Sprintf("%+q", v.S))
 		if err != nil {
-			log.Err(fmt.Sprintf("sql.Exec: %v", err))
+			log.Err("sql.Exec: " + err.Error())
 			if err = tx.Rollback(); err != nil {
-				log.Err(fmt.Sprintf("sql.Rollback:", err))
+				log.Err("sql.Rollback: " + err.Error())
 			}
 			return
 		}
 	}
 	if err = tx.Commit(); err != nil {
-		log.Err(fmt.Sprintf("sql.Commit:", err))
+		log.Err("sql.Commit: " + err.Error())
 	}
 }

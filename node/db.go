@@ -35,7 +35,8 @@ const (
 	dbSelectJobs       = "SELECT id, period, start, cmd FROM jobs"
 	dbDeleteJob        = "DELETE FROM jobs WHERE id = ?"
 	dbInsertResult     = "INSERT OR REPLACE INTO results (id, start, duration, flags, err, result) VALUES (?, ?, ?, ?, ?, ?)"
-	dbSelectResults    = "SELECT id, start, duration, flags, err, result FROM results WHERE start BETWEEN ? AND ?"
+	dbSelectResults    = "SELECT id, start, duration, flags, err, result FROM results WHERE start >= ?"
+	dbDeleteResults    = "DELETE FROM results WHERE start < ?"
 	dbDeleteJobResults = "DELETE FROM results WHERE id = ?"
 )
 
@@ -76,9 +77,11 @@ func replaceJobs(oldjobs, newjobs jobList) error {
 			if _, err := tx.Exec(dbDeleteJob, v.Id); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(dbDeleteJobResults, v.Id); err != nil {
-				return err
-			}
+			/*
+				if _, err := tx.Exec(dbDeleteJobResults, v.Id); err != nil {
+					return err
+				}
+			*/
 		}
 	}
 	// Insert idle jobs
@@ -176,14 +179,14 @@ func parseStringArray(s string) ([]string, error) {
 	return a, nil
 }
 
-func loadResults(from, till uint64) ([]*check.Result, error) {
+func loadResults(from uint64) ([]*check.Result, error) {
 	//log.Debug(fmt.Sprintf("loadResults: from %d to %d", from, till))
-	rows, err := dbc.Query(dbSelectResults, from, till)
+	rows, err := dbc.Query(dbSelectResults, from)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ra := make([]*check.Result, 0, 16) // how much?
+	ra := make([]*check.Result, 0, 16)
 	for rows.Next() {
 		var s string
 		r := &check.Result{}
@@ -198,4 +201,9 @@ func loadResults(from, till uint64) ([]*check.Result, error) {
 	}
 	//log.Debug(fmt.Sprintf("loadResults: %d", len(ra)))
 	return ra, nil
+}
+
+func deleteResults(till uint64) error {
+	_, err := dbc.Exec(dbDeleteResults, till)
+	return err
 }

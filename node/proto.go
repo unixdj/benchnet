@@ -52,7 +52,7 @@ func sendLogs(s *conn.Conn) (step, error) {
 	if err := s.CheckSig(); err != nil {
 		return nil, err
 	}
-	if ra, err := loadResults(then, now); err != nil {
+	if ra, err := loadResults(then); err != nil {
 		return nil, err
 	} else {
 		log.Debug(fmt.Sprintf("sending %d results", len(ra)))
@@ -60,6 +60,10 @@ func sendLogs(s *conn.Conn) (step, error) {
 			return nil, err
 		}
 	}
+	if then > now - uint64(time.Hour) * 2 {
+		then = now - uint64(time.Hour) * 2
+	}
+	deleteResults(then)
 	return recvJobs, s.SendSig()
 }
 
@@ -83,12 +87,12 @@ func sendBye(s *conn.Conn) (step, error) {
 	return nil, s.SendSig()
 }
 
-func talk() {
+func talk() (ok bool) {
 	log.Info("connecting to server " + serverAddr + conn.Port)
 	s, err := conn.Dial("tcp", "localhost"+conn.Port, networkKey)
 	if err != nil {
 		log.Err(err.Error())
-		return
+		return false
 	}
 	defer s.Close()
 	f, err := recvGreet(s)
@@ -97,7 +101,8 @@ func talk() {
 	}
 	if err != nil {
 		log.Err(err.Error())
-		return
+		return false
 	}
 	log.Info("conection completed")
+	return true
 }
