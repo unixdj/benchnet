@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/unixdj/benchnet/benchnode/check"
 	"github.com/unixdj/benchnet/lib/stdb"
-	"github.com/unixdj/benchnet/node/check"
 	"strconv"
 	"strings"
 )

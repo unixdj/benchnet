@@ -18,8 +18,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/unixdj/benchnet/node/check"
-	"github.com/unixdj/benchnet/node/sched"
+	"github.com/unixdj/benchnet/benchnode/check"
+	"github.com/unixdj/benchnet/benchnode/sched"
 	"sort"
 	"time"
 )
