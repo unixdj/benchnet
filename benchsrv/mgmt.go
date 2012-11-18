@@ -106,7 +106,7 @@ func mgmtAddNode(args []string, c *smtplike.Conn) (int, string) {
 		n.loc = geoloc(tmp)
 	}
 	n.key = make([]byte, 32)
-	if len(args) == 4 {
+	if len(args) == 3 {
 		l, err := io.ReadFull(rand.Reader, n.key)
 		if l != len(n.key) || err != nil {
 			return 501, "rand: " + err.Error()
@@ -115,9 +115,9 @@ func mgmtAddNode(args []string, c *smtplike.Conn) (int, string) {
 		if !netKeyRE.MatchString(args[3]) {
 			return 501, args[3] + ": must be 64 hexadecimal digits"
 		}
-		fmt.Sscanf(args[3], "%x", n.key)
+		fmt.Sscanf(args[3], "%x", &n.key)
 	}
-	if np := getJob(n.id); np != nil {
+	if np := getNode(n.id); np != nil {
 		return 550, "node already exists"
 	}
 	addNode(&n)
