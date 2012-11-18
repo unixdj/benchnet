@@ -32,8 +32,8 @@ import (
 
 var (
 	log              *syslog.Writer
-	conffile         = "benchode.conf"
-	dbfile           = "benchode.db"
+	conffile         = "benchnode.conf"
+	dbfile           = "benchnode.db"
 	serverAddr       = "klaipeda.startunit.com"
 	clientId, nodeId uint64
 	networkKey       []byte
