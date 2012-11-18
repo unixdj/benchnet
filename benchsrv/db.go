@@ -17,10 +17,9 @@
 package main
 
 import (
-	"github.com/unixdj/benchnet/lib/stdb"
-	//"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/unixdj/benchnet/lib/stdb"
 	"sort"
 	"strings"
 )
