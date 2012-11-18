@@ -17,7 +17,7 @@
 package main
 
 import (
-	"benchnet/lib/stdb"
+	"github.com/unixdj/benchnet/lib/stdb"
 	//"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"

@@ -17,8 +17,8 @@
 package main
 
 import (
-	"benchnet/lib/conn"
 	"fmt"
+	"github.com/unixdj/benchnet/lib/conn"
 	"log/syslog"
 	"net"
 	"os"

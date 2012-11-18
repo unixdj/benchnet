@@ -21,10 +21,10 @@
 package main
 
 import (
-	"benchnet/lib/conn"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"github.com/unixdj/benchnet/lib/conn"
 	"io"
 	"net"
 	"time"

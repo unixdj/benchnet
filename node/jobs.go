@@ -17,9 +17,9 @@
 package main
 
 import (
-	"benchnet/node/check"
-	"benchnet/node/sched"
 	"fmt"
+	"github.com/unixdj/benchnet/node/check"
+	"github.com/unixdj/benchnet/node/sched"
 	"sort"
 	"time"
 )

@@ -17,11 +17,11 @@
 package main
 
 import (
-	"benchnet/lib/stdb"
-	"benchnet/node/check"
 	"errors"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/unixdj/benchnet/lib/stdb"
+	"github.com/unixdj/benchnet/node/check"
 	"strconv"
 	"strings"
 )

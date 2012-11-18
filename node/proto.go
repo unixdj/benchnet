@@ -17,12 +17,12 @@
 package main
 
 import (
-	"benchnet/lib/conn"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"github.com/unixdj/benchnet/lib/conn"
 	"io"
 	"time"
 )
@@ -76,8 +76,8 @@ func sendLogs(s *conn.Conn) (step, error) {
 			return nil, err
 		}
 	}
-	if then > now - uint64(time.Hour) * 2 {
-		then = now - uint64(time.Hour) * 2
+	if then > now-uint64(time.Hour)*2 {
+		then = now - uint64(time.Hour)*2
 	}
 	deleteResults(then)
 	return recvJobs, s.SendSig()
