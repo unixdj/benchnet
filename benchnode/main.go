@@ -32,9 +32,9 @@ import (
 
 var (
 	log              *syslog.Writer
-	conffile         = "bench.conf"
-	dbfile           = "bench.db"
-	serverAddr       = "localhost"
+	conffile         = "benchode.conf"
+	dbfile           = "benchode.db"
+	serverAddr       = "klaipeda.startunit.com"
 	clientId, nodeId uint64
 	networkKey       []byte
 	netKeyRE         = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
