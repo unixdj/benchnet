@@ -56,7 +56,7 @@ table results:
 	result	 encoded ("%+q") string array of results
 */
 const (
-	dbfile        = "srv.db"
+	dbfile        = "benchsrv.db"
 	dbCreateNodes = `CREATE TABLE IF NOT EXISTS nodes
 		(id integer primary key, last integer, capa integer,
 		loc integer, key blob[32])`
