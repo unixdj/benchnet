@@ -14,6 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/*
+	File proto.go implements the node-server protocol.
+*/
+
 package main
 
 import (
@@ -90,12 +94,11 @@ func sendJobs(c *conn.Conn, d *connData) (step, error) {
 }
 
 func recvBye(c *conn.Conn, d *connData) (step, error) {
-	var buf [1]byte
-	_, err := io.ReadFull(c, buf[:])
+	b, err := c.ReadByte()
 	if err != nil {
 		return nil, err
 	}
-	if buf[0] != 0 {
+	if b != 0 {
 		return nil, conn.ErrProto
 	}
 	return nil, c.CheckSig()

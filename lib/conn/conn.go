@@ -22,11 +22,12 @@
 //
 //   S: <greet> <s-challenge>
 //   C: <id> hmac(key, s-challenge) <c-challenge>
-//   S: <new joblist> hmac(key, joblist + c-challenge)
 //   C: <logs> hmac(key, logs + s-challenge)
+//   S: <new joblist> hmac(key, joblist + c-challenge)
+//   C: <zero byte> hmac(key, "\0" + c-challenge)
 //
 // The same hash buffer is used for reading and writing.  Therefore the
-// loop should be:
+// basic loop should be:
 //   Read(buf)
 //   CheckSig()
 //   Write(buf)
@@ -187,6 +188,7 @@ func (c *Conn) ReceiveChallenge() error {
 	return nil
 }
 
+// RemoteAddr returns the remote network address.
 func (c *Conn) RemoteAddr() net.Addr {
 	return c.c.RemoteAddr()
 }
