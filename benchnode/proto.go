@@ -105,7 +105,7 @@ func sendBye(s *conn.Conn) (step, error) {
 
 func talk() (ok bool) {
 	log.Info("connecting to server " + serverAddr + conn.Port)
-	s, err := conn.Dial("tcp", "localhost"+conn.Port, networkKey)
+	s, err := conn.Dial("tcp", serverAddr+conn.Port, networkKey)
 	if err != nil {
 		log.Err(err.Error())
 		return false

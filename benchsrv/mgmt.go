@@ -106,7 +106,7 @@ func mgmtAddNode(args []string, c *smtplike.Conn) (int, string) {
 		n.loc = geoloc(tmp)
 	}
 	n.key = make([]byte, 32)
-	if len(args) == 3 {
+	if len(args) == 4 {
 		l, err := io.ReadFull(rand.Reader, n.key)
 		if l != len(n.key) || err != nil {
 			return 501, "rand: " + err.Error()
