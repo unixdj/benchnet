@@ -26,7 +26,6 @@
 package main
 
 import (
-	"benchnet/lib/check"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -38,7 +37,7 @@ type (
 	geoloc uint64 // Geolocation
 	blob   []byte // kinda-nullable blob for db access
 
-	// job description for node array
+	// job description as sent to client and stored in node
 	jobDesc struct {
 		Id            uint64
 		Period, Start int
@@ -66,8 +65,13 @@ type (
 
 	// Result
 	result struct {
-		check.Result
-		nodeId uint64
+		nodeId uint64   // Id of node that ran the check; unseen by gob
+		JobId  uint64   // Id of job that started the check
+		Flags  int      // Flags (failure)
+		Start  int64    // Time the check ran, nanoseconds since Unix epoch
+		RT     int64    // Run Time of the check, nanoseconds
+		Errs   string   // Error string returned by libraries
+		S      []string // Results of the run (e.g., HTTP headers)
 	}
 
 	jobRequest struct {
