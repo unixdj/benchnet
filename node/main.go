@@ -64,6 +64,10 @@ func readConf() error {
 			Val:  (*conf.StringValue)(&dbfile),
 		},
 		{
+			Name: "server",
+			Val:  (*conf.StringValue)(&serverAddr),
+		},
+		{
 			Name:     "clientid",
 			Val:      (*conf.Uint64Value)(&clientId),
 			Required: true,
