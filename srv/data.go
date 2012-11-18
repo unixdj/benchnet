@@ -18,10 +18,11 @@
 	This file deals with data structures and access.
 
 	To ensure consistency, all data access should happen via
-	interface functions in the main file.  Operations are
+	interface functions at the end of file.  Operations are
 	dispatched in the dataLoop() function which runs in a
 	dedicated coroutine.
 */
+
 package main
 
 import (
@@ -37,6 +38,7 @@ type (
 	geoloc uint64 // Geolocation
 	blob   []byte // kinda-nullable blob for db access
 
+	// job description for node array
 	jobDesc struct {
 		Id            uint64
 		Period, Start int
@@ -80,9 +82,10 @@ type (
 )
 
 var (
-	jobReqChan   = make(chan jobRequest, 5)  // async
-	nodeReqChan  = make(chan nodeRequest, 5) // async
-	schedReqChan = make(chan bool, 5)        // async
+	jobReqChan    = make(chan jobRequest, 5)  // async
+	nodeReqChan   = make(chan nodeRequest, 5) // async
+	schedReqChan  = make(chan bool, 2)        // async
+	commitReqChan = make(chan bool, 2)        // async
 )
 
 const (
@@ -503,12 +506,16 @@ func doGetNode(id uint64) *node {
 
 func dataInit() error {
 	err := dbOpen()
+	if dbc == nil {
+		return errors.New("can't open database: " + err.Error())
+	}
 	if err != nil {
-		return err
+		dbc.Close()
+		return errors.New("can't init database: " + err.Error())
 	}
 	if err = dbLoad(); err != nil {
 		dbClose()
-		return err
+		return errors.New("can't load database: " + err.Error())
 	}
 	log.Debug("database loaded")
 	return nil
@@ -520,8 +527,12 @@ func commit(done chan<- bool) {
 		return
 	}
 	d, r := diffs, results
-	diffs = make(difflist, 0, 16)
-	results = make(reslist, 0, 16)
+	if len(diffs) != 0 {
+		diffs = make(difflist, 0, 16)
+	}
+	if len(results) != 0 {
+		results = make(reslist, 0, 16)
+	}
 	go dbCommit(d, r, done)
 }
 
@@ -561,6 +572,16 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 		case <-headShot:
 			log.Debug("data loop: headshot")
 			return
+		case <-t.C:
+			requestSchedule()
+		case <-schedReqChan:
+			schedule()
+			requestCommit()
+		case <-commitReqChan:
+			if !committing {
+				commit(commitDone)
+				committing = true
+			}
 		case r := <-commitDone:
 			if !committing {
 				log.Crit("dataLoop(): commit done while not committing")
@@ -570,16 +591,6 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 				log.Debug("data loop: nothing to commit")
 			}
 			committing = false
-		case <-t.C:
-			if len(schedReqChan) == 0 {
-				schedReqChan <- true
-			}
-		case <-schedReqChan:
-			schedule()
-			if !committing {
-				commit(commitDone)
-				committing = true
-			}
 		case r := <-jobReqChan:
 			log.Debug("data loop: job request")
 			r.c <- doGetJob(r.id)
@@ -615,3 +626,15 @@ func addJob(j *job)           { opChan <- opRequest{op: opAddJob, j: j} }
 func rmJob(j *job)            { opChan <- opRequest{op: opRmJob, j: j} }
 func nodeSeen(n *node)        { opChan <- opRequest{op: opNodeSeen, n: n} }
 func addResults(r []result)   { opChan <- opRequest{op: opAddResults, r: r} }
+
+func requestSchedule() {
+	if len(schedReqChan) == 0 {
+		schedReqChan <- true
+	}
+}
+
+func requestCommit() {
+	if len(commitReqChan) == 0 {
+		commitReqChan <- true
+	}
+}

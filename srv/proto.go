@@ -122,4 +122,5 @@ func handle(nc net.Conn) {
 	log.Notice(client + ": connection completed")
 	nodeSeen(d.n)
 	addResults(d.r)
+	requestCommit()
 }

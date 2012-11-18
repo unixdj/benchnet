@@ -17,9 +17,9 @@
 package main
 
 import (
-	"github.com/unixdj/smtplike"
 	"crypto/rand"
 	"fmt"
+	"github.com/unixdj/smtplike"
 	"io"
 	"net"
 	"regexp" // i'm so lazy
@@ -28,11 +28,11 @@ import (
 
 var netKeyRE = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
-func mgmtGreet(args []string, ctx interface{}) (int, string) {
+func mgmtGreet(args []string, c *smtplike.Conn) (int, string) {
 	return smtplike.Hello, "benchnet-management-0 hello"
 }
 
-func mgmtAddJob(args []string, ctx interface{}) (int, string) {
+func mgmtAddJob(args []string, c *smtplike.Conn) (int, string) {
 	if len(args) < 6 {
 		return 501, "invalid syntax"
 	}
@@ -68,7 +68,7 @@ func mgmtAddJob(args []string, ctx interface{}) (int, string) {
 	return 200, "ok"
 }
 
-func mgmtRmJob(args []string, ctx interface{}) (int, string) {
+func mgmtRmJob(args []string, c *smtplike.Conn) (int, string) {
 	if len(args) != 1 {
 		return 501, "invalid syntax"
 	}
@@ -84,7 +84,7 @@ func mgmtRmJob(args []string, ctx interface{}) (int, string) {
 	return 200, "ok"
 }
 
-func mgmtAddNode(args []string, ctx interface{}) (int, string) {
+func mgmtAddNode(args []string, c *smtplike.Conn) (int, string) {
 	if len(args) < 3 || len(args) > 4 {
 		return 501, "invalid syntax"
 	}
@@ -124,7 +124,7 @@ func mgmtAddNode(args []string, ctx interface{}) (int, string) {
 	return 200, "ok"
 }
 
-func mgmtRmNode(args []string, ctx interface{}) (int, string) {
+func mgmtRmNode(args []string, c *smtplike.Conn) (int, string) {
 	if len(args) != 1 {
 		return 501, "invalid syntax"
 	}
@@ -140,7 +140,7 @@ func mgmtRmNode(args []string, ctx interface{}) (int, string) {
 	return 200, "ok"
 }
 
-func mgmtList(args []string, ctx interface{}) (int, string) {
+func mgmtList(args []string, c *smtplike.Conn) (int, string) {
 	if len(args) != 0 {
 		return 501, "invalid syntax"
 	}
@@ -151,19 +151,29 @@ func mgmtList(args []string, ctx interface{}) (int, string) {
 	return 210, s
 }
 
-func mgmtSched(args []string, ctx interface{}) (code int, msg string) {
+func mgmtSched(args []string, c *smtplike.Conn) (code int, msg string) {
 	if len(args) != 0 {
 		return 501, "invalid syntax"
 	}
-	schedReqChan <- true
+	requestSchedule()
 	return 210, "ok"
 }
 
-func mgmtHelp(args []string, ctx interface{}) (code int, msg string) {
+func mgmtCommit(args []string, c *smtplike.Conn) (code int, msg string) {
+	if len(args) != 0 {
+		return 501, "invalid syntax"
+	}
+	requestCommit()
+	return 210, "ok"
+}
+
+func mgmtHelp(args []string, c *smtplike.Conn) (code int, msg string) {
 	if len(args) != 0 {
 		return 501, "invalid syntax"
 	}
 	return 214, `commands:
+commit
+    commit changes to database
 h|help
     help
 job <id> <period> <start> <capacity> <times> <check>...
@@ -179,10 +189,10 @@ rmjob <id>
 rmnode <id>
     remove node
 sched
-    run scheduler`
+    run scheduler and commit changes to database`
 }
 
-func mgmtQuit(args []string, ctx interface{}) (code int, msg string) {
+func mgmtQuit(args []string, c *smtplike.Conn) (code int, msg string) {
 	if len(args) != 0 {
 		return 501, "invalid syntax"
 	}
@@ -199,6 +209,7 @@ var mgmt = smtplike.Proto{
 	{"rmjob", mgmtRmJob},
 	{"rmnode", mgmtRmNode},
 	{"sched", mgmtSched},
+	{"commit", mgmtCommit},
 	{"quit", mgmtQuit},
 }
 
