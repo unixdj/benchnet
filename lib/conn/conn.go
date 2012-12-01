@@ -156,7 +156,7 @@ func (c *Conn) CheckSig() error {
 	c.WriteToHash(c.chalThem)
 	c.h.Sum(csig[:0])
 	c.h.Reset()
-	if bytes.Compare(rsig[:], csig[:]) != 0 {
+	if !bytes.Equal(rsig[:], csig[:]) {
 		return ErrSig
 	}
 	return nil
