@@ -37,16 +37,15 @@ func (s *Sched) thread(period time.Duration, start time.Duration, f func()) {
 		return
 	case <-time.After(start):
 	}
-	f()
 	ticker := time.NewTicker(period)
 	for {
+		f()
 		select {
 		case <-s.headShot:
 			ticker.Stop()
 			return
 		case <-ticker.C:
 		}
-		f()
 	}
 }
 
