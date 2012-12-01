@@ -17,34 +17,25 @@
 // Package sched implements a simple scheduler.
 package sched
 
-import (
-	"time"
-)
+import "time"
 
-/*
-const (
-	minPeriod = time.Minute
-	maxPeriod = time.Hour * 24 * 14
-)
-*/
-
+// Sched represets a scheduler instance.
 type Sched struct {
 	headShot chan bool
 }
 
-// Stop stops the scheduler.  If f is currently running, Stop will
-// not return until it's finished.
+// Stop stops the scheduler s.  If f is currently running, Stop
+// will not return until it's finished.  If called twice, Stop
+// will hang forever.
 func (s *Sched) Stop() {
 	s.headShot <- true
 }
 
 func (s *Sched) thread(period time.Duration, start time.Duration, f func()) {
-	timer := time.NewTimer(start)
 	select {
 	case <-s.headShot:
-		timer.Stop()
 		return
-	case <-timer.C:
+	case <-time.After(start):
 	}
 	f()
 	ticker := time.NewTicker(period)
