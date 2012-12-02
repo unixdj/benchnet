@@ -14,23 +14,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package stdb is a single threaded database wrapper for exp/sql.
-//
-// API like exp/sql
-//
-// After Query(), the thread is locked to the client until either
-// (*Rows).Next() returns false or (*Rows).Close() is called.
-// So do it fast and close it good.
-//
-// Same goes for QueryRow() after which one (*Row).Scan() should
-// be issued, and Begin(), which should be finished off with
-// (*Tx).Commit() or (*Tx).Rollback().
+/*
+Package stdb is a single threaded database wrapper around
+database/sql.
+
+The underlying sql.DB is accessed via a single goroutine that
+gets requests and sends responses via channels, thus serializing
+database access.
+
+The API is like that of database/sql, except that some parts are
+missing.
+
+After Begin() is called, the connection is locked onto the
+returned *Tx until either (*Tx).Commit() or (Tx).Rollback()
+is called.  After Query() the connection locked to *Rows until
+either (*Rows).Next() returns false or (*Rows).Close() is called.
+QueryRow() locks to *Row until (*Row).Scan() is issued.
+
+Justification for this exercise can be found at:
+	https://gist.github.com/4184712
+*/
 package stdb
 
 import (
 	"database/sql"
 	"errors"
-	"io"
 )
 
 // operations
@@ -46,25 +54,26 @@ const (
 	opRollback
 )
 
+// DB is a database handle.
 type DB struct {
 	dbc *sql.DB  // backend
 	c   chan req // request channel
 }
 
+// Rows is the result of calling QueryRows.
 type Rows struct {
-	rows   *sql.Rows
 	c      chan req // request channel for query
 	closed bool
 }
 
+// Row is the result of calling QueryRow to select a single row.
 type Row struct {
-	row    *sql.Row
 	c      chan req // request channel for query
 	closed bool
 }
 
+// Tx represents a database transaction.
 type Tx struct {
-	tx     *sql.Tx
 	c      chan req
 	closed bool
 }
@@ -72,8 +81,8 @@ type Tx struct {
 // response
 type res struct {
 	result sql.Result // for Exec()
-	qctx   *Rows      // query context
-	qrctx  *Row       // query row context
+	rs     *Rows      // query context
+	rw     *Row       // query row context
 	tx     *Tx        // transaction
 	err    error
 }
@@ -88,78 +97,78 @@ type req struct {
 
 // thread
 
-// query loop: set up sql.Rows and loop until !Next() || Close() || input error
+// Query loop: set up sql.Rows and loop until !Next() || Close() || input error
 func (db *DB) handleQuery(r *req) {
 	rows, err := db.dbc.Query(r.cmd, r.args...)
 	if err != nil {
 		r.c <- res{err: err}
 		return
 	}
-	qctx := &Rows{rows: rows, c: make(chan req)}
-	r.c <- res{qctx: qctx}
-	defer qctx.rows.Close()
+	rs := &Rows{c: make(chan req)}
+	r.c <- res{rs: rs}
+	defer rows.Close()
 	for {
-		qr := <-qctx.c
+		qr := <-rs.c
 		switch qr.op {
 		case opScan:
-			qr.c <- res{err: qctx.rows.Scan(qr.args...)}
+			qr.c <- res{err: rows.Scan(qr.args...)}
 		case opNext:
-			if qctx.rows.Next() {
+			if rows.Next() {
 				qr.c <- res{}
 			} else {
 				// if marking closed, do it before sending
-				qctx.closed = true
-				qr.c <- res{err: io.EOF}
+				rs.closed = true
+				qr.c <- res{err: sql.ErrNoRows} // arbitrary
 				return
 			}
 		case opClose:
-			qctx.closed = true
+			rs.closed = true
 			qr.c <- res{}
 			return
 		default:
-			qctx.closed = true
+			rs.closed = true
 			qr.c <- res{err: errors.New("invalid db.Rows operation")}
 			return
 		}
 	}
 }
 
-// queryRow loop: set up sql.Row and process one Scan()
+// QueryRow loop: set up sql.Row and process one Scan()
 func (db *DB) handleQueryRow(r *req) {
 	row := db.dbc.QueryRow(r.cmd, r.args...)
-	qrctx := &Row{row: row, c: make(chan req)}
-	r.c <- res{qrctx: qrctx}
-	qr := <-qrctx.c
-	qrctx.closed = true
+	rw := &Row{c: make(chan req)}
+	r.c <- res{rw: rw}
+	qr := <-rw.c
+	rw.closed = true
 	if qr.op == opScan {
-		qr.c <- res{err: qrctx.row.Scan(qr.args...)}
+		qr.c <- res{err: row.Scan(qr.args...)}
 	} else {
 		qr.c <- res{err: errors.New("invalid db.Row operation")}
 	}
 }
 
-// tx loop: set up sql.Tx and loop until Commit() || Rollback() || input error
+// Tx loop: set up sql.Tx and loop until Commit() || Rollback() || input error
 func (db *DB) handleTx(r *req) {
 	tx, err := db.dbc.Begin()
 	if err != nil {
 		r.c <- res{err: err}
 		return
 	}
-	ctx := &Tx{tx: tx, c: make(chan req)}
+	ctx := &Tx{c: make(chan req)}
 	r.c <- res{tx: ctx}
 	for {
 		txr := <-ctx.c
 		switch txr.op {
 		case opExec:
-			result, err := ctx.tx.Exec(txr.cmd, txr.args...)
+			result, err := tx.Exec(txr.cmd, txr.args...)
 			txr.c <- res{result: result, err: err}
 		case opCommit:
 			ctx.closed = true
-			txr.c <- res{err: ctx.tx.Commit()}
+			txr.c <- res{err: tx.Commit()}
 			return
 		case opRollback:
 			ctx.closed = true
-			txr.c <- res{err: ctx.tx.Rollback()}
+			txr.c <- res{err: tx.Rollback()}
 			return
 		case opQuery:
 			db.handleQuery(&txr)
@@ -201,7 +210,9 @@ func (db *DB) thread(driverName, dataSourceName string, c chan<- error) {
 	}
 }
 
-// Open(): start thread
+// -- front end
+
+// Open opens a database connection and starts the worker goroutine.
 func Open(driverName, dataSourceName string) (*DB, error) {
 	db := &DB{nil, make(chan req)}
 	c := make(chan error)
@@ -212,14 +223,15 @@ func Open(driverName, dataSourceName string) (*DB, error) {
 	return db, nil
 }
 
-// frontend: communication with thread
-
+// Close closes the database connection and terminates the
+// worker goroutine.
 func (db *DB) Close() error {
 	c := make(chan res)
 	db.c <- req{op: opClose, c: c}
 	return (<-c).err
 }
 
+// Exec executes a query that returns no rows.
 func (db *DB) Exec(s string, args ...interface{}) (sql.Result, error) {
 	c := make(chan res)
 	db.c <- req{op: opExec, cmd: s, args: args, c: c}
@@ -229,59 +241,62 @@ func (db *DB) Exec(s string, args ...interface{}) (sql.Result, error) {
 
 // -- Query() / Rows
 
+// Query executes a query that returns rows.
 func (db *DB) Query(s string, args ...interface{}) (*Rows, error) {
 	c := make(chan res)
 	db.c <- req{op: opQuery, cmd: s, args: args, c: c}
 	r := <-c
-	return r.qctx, r.err
+	return r.rs, r.err
 }
 
-func (qctx *Rows) Next() bool {
-	if qctx.closed {
+func (rs *Rows) Next() bool {
+	if rs.closed {
 		return false
 	}
 	c := make(chan res)
-	qctx.c <- req{op: opNext, c: c}
+	rs.c <- req{op: opNext, c: c}
 	return (<-c).err == nil
 }
 
-func (qctx *Rows) Scan(args ...interface{}) error {
-	if qctx.closed {
-		return io.EOF
+func (rs *Rows) Scan(args ...interface{}) error {
+	if rs.closed {
+		return errors.New("sql: Rows closed")
 	}
 	c := make(chan res)
-	qctx.c <- req{op: opScan, args: args, c: c}
+	rs.c <- req{op: opScan, args: args, c: c}
 	return (<-c).err
 }
 
-func (qctx *Rows) Close() bool {
-	if qctx.closed {
-		return false
+func (rs *Rows) Close() error {
+	if rs.closed {
+		return nil
 	}
 	c := make(chan res)
-	qctx.c <- req{op: opClose, c: c}
-	return (<-c).err == nil
+	rs.c <- req{op: opClose, c: c}
+	return (<-c).err
 }
 
 // -- QueryRow() / Row
 
+// QueryRow executes a query that returns one row.
 func (db *DB) QueryRow(s string, args ...interface{}) *Row {
 	c := make(chan res)
 	db.c <- req{op: opQueryRow, cmd: s, args: args, c: c}
-	return (<-c).qrctx
+	return (<-c).rw
 }
 
-func (qrctx *Row) Scan(args ...interface{}) error {
-	if qrctx.closed {
-		return io.EOF
+func (rw *Row) Scan(args ...interface{}) error {
+	if rw.closed {
+		return errors.New("sql: Row closed")
 	}
 	c := make(chan res)
-	qrctx.c <- req{op: opScan, args: args, c: c}
+	rw.c <- req{op: opScan, args: args, c: c}
 	return (<-c).err
 }
 
 // -- Begin() / Tx
 
+// Begin starts a transaction.
 func (db *DB) Begin() (*Tx, error) {
 	c := make(chan res)
 	db.c <- req{op: opBegin, c: c}
@@ -291,7 +306,7 @@ func (db *DB) Begin() (*Tx, error) {
 
 func (tx *Tx) Exec(s string, args ...interface{}) (sql.Result, error) {
 	if tx.closed {
-		return nil, io.EOF
+		return nil, sql.ErrTxDone
 	}
 	c := make(chan res)
 	tx.c <- req{op: opExec, cmd: s, args: args, c: c}
@@ -301,7 +316,7 @@ func (tx *Tx) Exec(s string, args ...interface{}) (sql.Result, error) {
 
 func (tx *Tx) Commit() error {
 	if tx.closed {
-		return io.EOF
+		return sql.ErrTxDone
 	}
 	c := make(chan res)
 	tx.c <- req{op: opCommit, c: c}
@@ -310,7 +325,7 @@ func (tx *Tx) Commit() error {
 
 func (tx *Tx) Rollback() error {
 	if tx.closed {
-		return io.EOF
+		return sql.ErrTxDone
 	}
 	c := make(chan res)
 	tx.c <- req{op: opRollback, c: c}
