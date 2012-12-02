@@ -107,13 +107,11 @@ func netLoop(headShot <-chan bool) {
 			dur = durFuzz(retryTime, retryFuzz)
 		}
 		log.Debug(fmt.Sprintf("next connection in %v", dur))
-		t := time.NewTimer(dur)
 		select {
 		case <-headShot:
 			log.Debug("net loop done")
-			t.Stop()
 			return
-		case <-t.C:
+		case <-time.After(dur):
 		}
 	}
 }

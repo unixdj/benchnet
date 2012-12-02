@@ -21,6 +21,7 @@ import (
 	"github.com/unixdj/benchnet/benchnode/check"
 	"github.com/unixdj/benchnet/benchnode/sched"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -57,24 +58,20 @@ func findJob(id uint64) (i int, found bool) {
 
 // kill jobs and wait for them to die in parallel
 func killJobs() {
-	var k int
-	c := make(chan bool)
+	var wg sync.WaitGroup
 	for i, v := range jobs {
 		if v.s == nil {
 			continue
 		}
+		wg.Add(1)
 		go func(s *sched.Sched, id uint64) {
 			s.Stop()
 			log.Debug(fmt.Sprintf("killed job %d", id))
-			c <- true
+			wg.Done()
 		}(v.s, v.Id)
 		jobs[i].s = nil // mark as not running
-		k++
 	}
-	for k > 0 {
-		<-c
-		k--
-	}
+	wg.Wait()
 }
 
 func killJob(id uint64) bool {
