@@ -118,7 +118,7 @@ func netLoop(headShot <-chan bool) {
 
 func main() {
 	var err error
-	log, err = syslog.New(syslog.LOG_INFO,
+	log, err = syslog.New(syslog.LOG_DAEMON,
 		fmt.Sprintf("benchnet.node[%d]", os.Getpid()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't connect to syslog: %v", err)

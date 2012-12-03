@@ -52,7 +52,7 @@ func netLoop(l net.Listener, handler func(net.Conn), name string) {
 
 func main() {
 	var err error
-	log, err = syslog.New(syslog.LOG_INFO,
+	log, err = syslog.New(syslog.LOG_DAEMON,
 		fmt.Sprintf("benchnet.server[%d]", os.Getpid()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "can't connect to syslog: %v\n", err)
