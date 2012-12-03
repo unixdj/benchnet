@@ -131,25 +131,25 @@ func main() {
 		syscall.SIGPIPE, syscall.SIGTERM)
 
 	if err = readConf(); err != nil {
-		log.Crit(err.Error())
+		log.Err(err.Error())
 		os.Exit(1)
 	}
 
 	err = dbOpen()
 	if dbc == nil {
-		log.Crit("can't open database: " + err.Error())
+		log.Err("can't open database: " + err.Error())
 		os.Exit(1)
 	}
 	defer dbc.Close()
 	if err != nil {
 		dbc.Close()
-		log.Crit("can't init database: " + err.Error())
+		log.Err("can't init database: " + err.Error())
 		os.Exit(1)
 	}
 
 	if err = loadJobs(); err != nil {
 		dbc.Close()
-		log.Crit("error while loading jobs from database: " + err.Error())
+		log.Err("error while loading jobs from database: " + err.Error())
 		os.Exit(1)
 	}
 	killNet := make(chan bool)
@@ -164,7 +164,7 @@ func main() {
 		<-netDone
 	}()
 
-	log.Notice("RUNNING")
+	log.Info("RUNNING")
 
-	log.Notice("EXIT: " + (<-killme).String())
+	log.Info("EXIT: " + (<-killme).String())
 }

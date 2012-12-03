@@ -38,13 +38,13 @@ func netLoop(l net.Listener, handler func(net.Conn), name string) {
 				return
 			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				log.Warning("accept: " + ne.Error())
+				log.Notice("accept: " + ne.Error())
 				continue
 			}
-			log.Err("accept: " + err.Error())
+			log.Notice("accept: " + err.Error())
 			break
 		}
-		log.Notice(fmt.Sprintf("accept %s connection from %s",
+		log.Info(fmt.Sprintf("accept %s connection from %s",
 			name, c.RemoteAddr()))
 		go handler(c)
 	}
@@ -70,7 +70,7 @@ func main() {
 	go dataLoop(initDone, killData, dataDone)
 	// wait for data loop to initialize
 	if err := <-initDone; err != nil {
-		log.Crit(err.Error())
+		log.Err(err.Error())
 		return
 	}
 	defer func() {
@@ -80,7 +80,7 @@ func main() {
 
 	l, err := net.Listen("tcp", conn.Port)
 	if err != nil {
-		log.Crit("FATAL: " + err.Error())
+		log.Err("FATAL: " + err.Error())
 		return
 	}
 	defer l.Close()
@@ -88,14 +88,14 @@ func main() {
 
 	m, err := net.Listen("tcp", "127.0.0.1:25197") // "bm" for benchmgmt
 	if err != nil {
-		log.Crit("FATAL: " + err.Error())
+		log.Err("FATAL: " + err.Error())
 		return
 	}
 	defer m.Close()
 	go netLoop(m, mgmtHandle, "management")
 
-	log.Notice("RUNNING")
+	log.Info("RUNNING")
 
-	log.Notice("EXIT: " + (<-killme).String())
+	log.Info("EXIT: " + (<-killme).String())
 	dying = true
 }

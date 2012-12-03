@@ -214,7 +214,7 @@ func dbCommit(diffs difflist, results reslist, done chan<- bool) {
 	}()
 	tx, err := dbc.Begin()
 	if err != nil {
-		log.Err("sql.Begin: " + err.Error())
+		log.Notice("sql.Begin: " + err.Error())
 		return
 	}
 	for _, v := range diffs {
@@ -235,12 +235,12 @@ func dbCommit(diffs difflist, results reslist, done chan<- bool) {
 		case opRmJob:
 			_, err = tx.Exec(dbDeleteJob, v.jobId)
 		default:
-			log.Crit(fmt.Sprintf("interal error: invalid database operation %d", v.op))
+			log.Warning(fmt.Sprintf("interal error: invalid database operation %d", v.op))
 		}
 		if err != nil {
-			log.Err("sql.Exec: %v" + err.Error())
+			log.Notice("sql.Exec: %v" + err.Error())
 			if err = tx.Rollback(); err != nil {
-				log.Err("sql.Rollback: " + err.Error())
+				log.Notice("sql.Rollback: " + err.Error())
 			}
 			return
 		}
@@ -249,14 +249,14 @@ func dbCommit(diffs difflist, results reslist, done chan<- bool) {
 		_, err := tx.Exec(dbInsertResult, v.nodeId, v.JobId, v.Start,
 			v.RT, v.Flags, v.Errs, fmt.Sprintf("%+q", v.S))
 		if err != nil {
-			log.Err("sql.Exec: " + err.Error())
+			log.Notice("sql.Exec: " + err.Error())
 			if err = tx.Rollback(); err != nil {
-				log.Err("sql.Rollback: " + err.Error())
+				log.Notice("sql.Rollback: " + err.Error())
 			}
 			return
 		}
 	}
 	if err = tx.Commit(); err != nil {
-		log.Err("sql.Commit: " + err.Error())
+		log.Notice("sql.Commit: " + err.Error())
 	}
 }

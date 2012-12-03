@@ -558,7 +558,7 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 	)
 	defer func() {
 		if err := recover(); err != nil {
-			log.Crit(fmt.Sprintf("data loop: panic %v", err))
+			log.Err(fmt.Sprintf("data loop: panic %v", err))
 		}
 		t.Stop()
 		if committing {
@@ -588,7 +588,7 @@ func dataLoop(initDone chan<- error, headShot <-chan bool, done chan<- bool) {
 			}
 		case r := <-commitDone:
 			if !committing {
-				log.Crit("dataLoop(): commit done while not committing")
+				log.Warning("dataLoop(): commit done while not committing")
 			} else if r {
 				log.Debug("data loop: commit done")
 			} else {

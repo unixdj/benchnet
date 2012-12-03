@@ -128,7 +128,7 @@ func loadJobs() error {
 		}
 		j.Check = strings.Fields(s)
 		if !addJob(&j, false) {
-			log.Err(fmt.Sprintf("invalid job %d: %v",
+			log.Notice(fmt.Sprintf("invalid job %d: %v",
 				j.Id, j.Check))
 			continue
 		}
@@ -196,7 +196,6 @@ func parseStringArray(s string) ([]string, error) {
 }
 
 func loadResults(from uint64) ([]*check.Result, error) {
-	//log.Debug(fmt.Sprintf("loadResults: from %d to %d", from, till))
 	rows, err := dbc.Query(dbSelectResults, from)
 	if err != nil {
 		return nil, err
@@ -215,7 +214,6 @@ func loadResults(from uint64) ([]*check.Result, error) {
 		}
 		ra = append(ra, r)
 	}
-	//log.Debug(fmt.Sprintf("loadResults: %d", len(ra)))
 	return ra, nil
 }
 

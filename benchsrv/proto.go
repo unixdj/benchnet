@@ -109,7 +109,7 @@ func handle(nc net.Conn) {
 	cc, err := conn.New(nc)
 	if err != nil {
 		nc.Close()
-		log.Err(client + ": handle: " + err.Error())
+		log.Notice(client + ": handle: " + err.Error())
 		return
 	}
 	defer cc.Close()
@@ -119,10 +119,10 @@ func handle(nc net.Conn) {
 		f, err = f(cc, &d)
 	}
 	if err != nil {
-		log.Err(client + ": handle: " + err.Error())
+		log.Notice(client + ": handle: " + err.Error())
 		return
 	}
-	log.Notice(client + ": connection completed")
+	log.Info(client + ": connection completed")
 	nodeSeen(d.n)
 	addResults(d.r)
 	requestCommit()
